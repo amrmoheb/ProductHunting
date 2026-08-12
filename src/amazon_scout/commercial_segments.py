@@ -11,6 +11,21 @@ COMMERCIAL_SEGMENT_STATUSES = {"COMPARABLE", "ADJACENT", "NON_COMPARABLE", "UNKN
 
 
 @dataclass(frozen=True)
+class PriceGateDecision:
+    gate: bool
+    reason: str
+    sample_size: int
+    median_price_aed: float | None
+    in_target_band_count: int
+    in_target_band_ratio: float | None
+    minimum_sample_size: int
+    minimum_in_target_band_ratio: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TargetCommercialProfile:
     product_subtype: str
     required_features: tuple[str, ...] = ()
@@ -28,6 +43,23 @@ class TargetCommercialProfile:
 
 def load_commercial_config(path: str | Path = "config/commercial_segments.yaml") -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def evaluate_price_gate(comparable_prices_aed: list[float], minimum_price_aed: float | None, maximum_price_aed: float | None, *, minimum_sample_size: int, minimum_in_target_band_ratio: float) -> PriceGateDecision:
+    """Return the one canonical V1.2.3 comparable-market price decision."""
+    from statistics import median
+
+    prices = [float(value) for value in comparable_prices_aed]
+    sample_size = len(prices); midpoint = median(prices) if prices else None
+    in_band = sum((minimum_price_aed is None or value >= minimum_price_aed) and (maximum_price_aed is None or value <= maximum_price_aed) for value in prices)
+    ratio = in_band / sample_size if sample_size else None
+    enough = sample_size >= minimum_sample_size
+    median_in_band = midpoint is not None and (minimum_price_aed is None or midpoint >= minimum_price_aed) and (maximum_price_aed is None or midpoint <= maximum_price_aed)
+    gate = enough and (median_in_band or (ratio is not None and ratio >= minimum_in_target_band_ratio))
+    if not enough: reason = f"Only {sample_size} current comparable Amazon UAE products were observed; at least {minimum_sample_size} are required."
+    elif gate: reason = f"Comparable commercial segment satisfies the requested range (median AED {midpoint:.2f}; in-band {ratio:.0%})."
+    else: reason = f"Comparable segment median AED {midpoint:.2f} and in-band ratio {ratio:.0%} do not satisfy the AED {minimum_price_aed}–{maximum_price_aed} rule."
+    return PriceGateDecision(gate, reason, sample_size, midpoint, in_band, ratio, minimum_sample_size, minimum_in_target_band_ratio)
 
 
 def target_commercial_profile(niche: str, keyword: str) -> TargetCommercialProfile:

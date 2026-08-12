@@ -10,7 +10,7 @@ from statistics import median
 from typing import Any
 from urllib.parse import urlparse
 
-from .commercial_segments import load_commercial_config
+from .commercial_segments import evaluate_price_gate, load_commercial_config
 from .database import ScoutDatabase
 from .evidence import EvidenceFreshness, EvidenceRecord, EvidenceStrength, MarketRelevance, freshness_for, load_freshness_config, parse_aware_datetime
 from .normalization import clamp, minmax, percentile, price_statistics
@@ -181,8 +181,9 @@ def _source_status(records: list[EvidenceRecord]) -> dict[str, str]:
     return {name: "USED" if is_used else ("NOT_CONFIGURED" if name in {"SerpApi", "DataForSEO", "Rainforest", "Amazon SP-API"} else "AVAILABLE_NOT_USED") for name, is_used in used.items()}
 
 
-def recommendation_tier(candidate_type: str, gates: dict[str, dict[str, Any]], preliminary: float | None, validated: float | None, confidence: float, risk_score: float | None, constraint_rejected: bool, minimum_recommendation_score: float = 65) -> str:
+def recommendation_tier(candidate_type: str, gates: dict[str, dict[str, Any]], preliminary: float | None, validated: float | None, confidence: float, risk_score: float | None, constraint_rejected: bool, minimum_recommendation_score: float = 65, commercial_classification: str = "CORE_MARKET_OPPORTUNITY") -> str:
     if candidate_type == "BUNDLE_HYPOTHESIS": return "BUNDLE_HYPOTHESIS"
+    if commercial_classification == "PREMIUM_POSITIONING_HYPOTHESIS": return "PREMIUM_POSITIONING_HYPOTHESIS"
     if constraint_rejected: return "REJECTED_CONSTRAINT"
     if risk_score is not None and risk_score >= 70: return "HIGH_RISK"
     if validated is not None and confidence >= 60:
@@ -196,10 +197,11 @@ def canonical_funnel(raw_funnel: dict[str, Any], analyses: list[dict[str, Any]])
     screened = min(generated, int(raw_funnel.get("screened", len(analyses))))
     evidence_backed = min(screened, sum(any(v["status"] not in {"UNKNOWN"} for v in a["components"].values()) for a in analyses))
     serpapi_validated = min(evidence_backed, sum(bool(a.get("serpapi_keywords")) for a in analyses))
-    validated = min(evidence_backed, sum(a["validated_opportunity_score"] is not None for a in analyses))
-    finalists = min(validated, sum(a["recommendation_tier"] == "VALIDATED_CANDIDATE" for a in analyses))
+    validated = min(evidence_backed, sum(bool(a.get("technically_validated")) for a in analyses))
+    strong = min(validated, sum(bool(a.get("qualified_strong_opportunity")) for a in analyses))
+    finalists = strong
     bundles = sum(a["candidate_type"] == "BUNDLE_HYPOTHESIS" for a in analyses)
-    return {"generated": generated, "screened": screened, "web_evidence_backed": evidence_backed, "evidence_backed": evidence_backed, "serpapi_validated": serpapi_validated, "price_gate_passed": sum(a["gates"]["price"]["gate"] for a in analyses), "demand_gate_passed": sum(a["gates"]["demand"]["gate"] for a in analyses), "competition_gate_passed": sum(a["gates"]["competition"]["gate"] for a in analyses), "risk_gate_passed": sum(a["gates"]["risk"]["gate"] for a in analyses), "validated": validated, "bundle_hypotheses": bundles, "finalists": finalists}
+    return {"generated": generated, "screened": screened, "web_evidence_backed": evidence_backed, "evidence_backed": evidence_backed, "serpapi_validated": serpapi_validated, "price_gate_passed": sum(a["gates"]["price"]["gate"] for a in analyses), "demand_gate_passed": sum(a["gates"]["demand"]["gate"] for a in analyses), "competition_gate_passed": sum(a["gates"]["competition"]["gate"] for a in analyses), "risk_gate_passed": sum(a["gates"]["risk"]["gate"] for a in analyses), "technically_validated": validated, "strong_opportunities": strong, "validated": validated, "bundle_hypotheses": bundles, "finalists": finalists}
 
 
 def validate_funnel_invariants(funnel: dict[str, int]) -> None:
@@ -223,7 +225,6 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         evidence = by_niche[niche]; products = products_by_niche[niche]; product = products[0] if products else {}
         candidate_type = _candidate_type(product)
         has_segment_data = any(p.get("commercial_segment_status") for p in products)
-        enforce_commercial_gate = bool(product.get("target_commercial_profile",{}).get("specific"))
         comparable_products = [p for p in products if p.get("commercial_segment_status") == "COMPARABLE"] if has_segment_data else products
         comparable_asins = {str(p["asin"]) for p in comparable_products if p.get("asin")}
         # Per-ASIN SerpApi evidence must follow the persisted commercial classification.
@@ -244,17 +245,14 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
             proposed = _legacy_fee_basis(evidence) or product.get("current_price_aed")
         fee_basis = product.get("fee_calculation_price_aed") or _legacy_fee_basis(evidence)
         if fee_basis is None and candidate_type == "OBSERVED_MARKET_OPPORTUNITY" and comparable_current_prices: fee_basis = median(comparable_current_prices)
-        comparable_in_band = sum((minimum is None or p >= minimum) and (maximum is None or p <= maximum) for p in comparable_current_prices)
-        comparable_ratio = comparable_in_band / len(comparable_current_prices) if comparable_current_prices else 0.0
-        comparable_median = median(comparable_current_prices) if comparable_current_prices else None
-        median_in_band = comparable_median is not None and (minimum is None or comparable_median >= minimum) and (maximum is None or comparable_median <= maximum)
-        enough_comparables = len(comparable_current_prices) >= int(commercial_cfg["minimum_comparable_products"])
-        price_in_band = (enough_comparables and (median_in_band or comparable_ratio >= float(commercial_cfg["minimum_in_target_band_ratio"]))) if enforce_commercial_gate else any((minimum is None or p >= minimum) and (maximum is None or p <= maximum) for p in comparable_current_prices)
+        price_decision = evaluate_price_gate(comparable_current_prices, minimum, maximum, minimum_sample_size=int(commercial_cfg["minimum_comparable_products"]), minimum_in_target_band_ratio=float(commercial_cfg["minimum_in_target_band_ratio"]))
+        comparable_in_band = price_decision.in_target_band_count
+        comparable_ratio = price_decision.in_target_band_ratio or 0.0
+        comparable_median = price_decision.median_price_aed
+        price_in_band = price_decision.gate
         price_gate = candidate_type == "OBSERVED_MARKET_OPPORTUNITY" and price_in_band
         if candidate_type != "OBSERVED_MARKET_OPPORTUNITY": price_reason = "Hypothetical bundle/differentiation price cannot satisfy the observed Amazon UAE price gate."
-        elif enforce_commercial_gate and not enough_comparables: price_reason = f"Only {len(comparable_current_prices)} current comparable Amazon UAE products were observed; at least {commercial_cfg['minimum_comparable_products']} are required."
-        elif comparable_current_prices and not price_in_band: price_reason = f"Comparable segment median AED {comparable_median:.2f} and in-band ratio {comparable_ratio:.0%} do not satisfy the AED {minimum}–{maximum} rule."
-        elif comparable_current_prices: price_reason = f"Comparable commercial segment satisfies the requested range (median AED {comparable_median:.2f}; in-band {comparable_ratio:.0%})."
+        elif comparable_current_prices: price_reason = price_decision.reason
         elif amazon_price_records: price_reason = "Amazon UAE price evidence exists, but it is not current enough to satisfy the price gate."
         elif external_prices: price_reason = "Only external UAE retail prices are available; they are context and cannot satisfy the Amazon UAE price gate."
         else: price_reason = "No current credible Amazon UAE price observation is available."
@@ -276,11 +274,14 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         overall_confidence = round(sum(component_confidences) / len(component_confidences), 2)
         confidence_gate = overall_confidence >= scoring["research_gates"]["top_3_minimum_confidence"]
         gates["confidence"] = {"gate": confidence_gate, "reason": "Overall data confidence meets the 60% sourcing threshold." if confidence_gate else f"Overall data confidence {overall_confidence}% is below the required 60%."}
-        premium_prices = [float(p["current_price_aed"]) for p in products if p.get("positioning") == "PREMIUM" and p.get("commercial_segment_status") != "COMPARABLE" and isinstance(p.get("current_price_aed"),(int,float)) and (minimum is None or float(p["current_price_aed"]) >= minimum) and (maximum is None or float(p["current_price_aed"]) <= maximum)]
-        commercial_classification = "PREMIUM_POSITIONING_HYPOTHESIS" if not price_gate and premium_prices else "CORE_MARKET_OPPORTUNITY"
+        premium_prices = [float(p["current_price_aed"]) for p in products if p.get("positioning") == "PREMIUM" and isinstance(p.get("current_price_aed"),(int,float)) and (minimum is None or float(p["current_price_aed"]) >= minimum) and (maximum is None or float(p["current_price_aed"]) <= maximum)]
+        below_floor_with_premium_tail = not price_gate and comparable_median is not None and minimum is not None and comparable_median < minimum and (comparable_in_band > 0 or bool(premium_prices))
+        commercial_classification = "PREMIUM_POSITIONING_HYPOTHESIS" if below_floor_with_premium_tail else "CORE_MARKET_OPPORTUNITY"
         rejected = candidate_type == "OBSERVED_MARKET_OPPORTUNITY" and bool(current_amazon_prices) and not price_in_band
         minimum_recommendation_score = float(scoring["research_gates"].get("minimum_recommendation_score", 65))
-        tier = recommendation_tier(candidate_type, gates, preliminary, validated, overall_confidence, risk["score"], rejected, minimum_recommendation_score)
+        tier = recommendation_tier(candidate_type, gates, preliminary, validated, overall_confidence, risk["score"], rejected, minimum_recommendation_score, commercial_classification)
+        technically_validated = required_pass and confidence_gate
+        qualified_strong = technically_validated and validated is not None and validated >= minimum_recommendation_score
         freshnesses = [_fresh(r, generated_at, fresh_cfg) for r in evidence]
         aggregate_freshness = "CURRENT" if any(x == EvidenceFreshness.CURRENT for x in freshnesses) else "AGING" if any(x == EvidenceFreshness.AGING for x in freshnesses) else "STALE" if freshnesses else "UNKNOWN"
         component_freshness = {
@@ -312,11 +313,11 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
             "competition_score": competition["score"], "competition_status": competition["status"], "competition_confidence": competition["confidence"],
             "risk_score": risk["score"], "risk_status": risk["status"], "risk_confidence": risk["confidence"], "factors": factors,
             "preliminary_opportunity_score": preliminary, "validated_opportunity_score": validated, "opportunity_score": preliminary,
-            "data_confidence_score": overall_confidence, "recommendation_tier": tier, "gates": gates, "evidence_freshness": aggregate_freshness,
+            "data_confidence_score": overall_confidence, "recommendation_tier": tier, "technically_validated": technically_validated, "qualified_strong_opportunity": qualified_strong, "gates": gates, "evidence_freshness": aggregate_freshness,
             "component_freshness": component_freshness, "representative_asins": representative_asins[:12], "serpapi_keywords": serpapi_keywords,
             "relevance_summary": {"total_serpapi_results": int(max(_numeric(evidence,"total_serpapi_results") or [0])), "exact_results": int(max(_numeric(evidence,"exact_results") or [0])), "close_variants": int(max(_numeric(evidence,"close_variants") or [0])), "excluded_accessories": int(max(_numeric(evidence,"excluded_accessories") or [0])), "excluded_wrong_products": int(max(_numeric(evidence,"excluded_wrong_products") or [0])), "ambiguous_results": int(max(_numeric(evidence,"ambiguous_results") or [0])), "exact_target_price_sample": exact_prices, "close_variant_price_sample": close_prices, "combined_validated_price_sample": exact_prices+close_prices},
             "structured_metrics": {"relevant_result_count": len({p.get('asin') for p in products if p.get('asin')}), "comparable_result_count": len({p.get('asin') for p in comparable_products if p.get('asin')}), "amazon_uae_price_sample_size": len(current_amazon_prices), "current_price_min_aed": min(current_amazon_prices) if current_amazon_prices else None, "current_price_median_aed": current_stats.get("median"), "current_price_max_aed": max(current_amazon_prices) if current_amazon_prices else None, "comparable_sample_size": len(comparable_current_prices), "comparable_price_min_aed": min(comparable_current_prices) if comparable_current_prices else None, "comparable_price_p25_aed": comparable_stats.get("p25"), "comparable_price_median_aed": comparable_stats.get("median"), "comparable_price_mean_aed": comparable_stats.get("mean"), "comparable_price_p75_aed": comparable_stats.get("p75"), "comparable_price_max_aed": max(comparable_current_prices) if comparable_current_prices else None, "comparable_in_target_band_count": comparable_in_band, "comparable_in_target_band_ratio": comparable_ratio if comparable_current_prices else None, "price_gate_minimum_comparable_products": commercial_cfg["minimum_comparable_products"], "price_gate_minimum_in_band_ratio": commercial_cfg["minimum_in_target_band_ratio"], "rating_sample_size": len(ratings), "median_rating": median(ratings) if ratings else None, "review_sample_size": len(reviews), "median_reviews": median(reviews) if reviews else None, "p75_reviews": percentile(reviews,.75) if reviews else None, "sponsored_sample_size": len(sponsored_values), "sponsored_count": sum(sponsored_values) if sponsored_values else None, "sponsored_density": sum(sponsored_values)/len(sponsored_values) if sponsored_complete else None, "unique_brand_count": len({str(r.metric_value).lower() for r in segment_evidence if r.metric_name == 'brand' and r.metric_value}), "top_brand_share": max(Counter(str(r.metric_value).lower() for r in segment_evidence if r.metric_name == 'brand' and r.metric_value).values())/max(1,len([r for r in segment_evidence if r.metric_name == 'brand' and r.metric_value])) if any(r.metric_name == 'brand' and r.metric_value for r in segment_evidence) else None, "bought_last_month_observations": [r.metric_value for r in segment_evidence if r.metric_name == 'bought_last_month_raw']},
-            "final_top_10_eligible": validated is not None and validated >= minimum_recommendation_score, "top_3_to_source_eligible": validated is not None and validated >= minimum_recommendation_score and confidence_gate and candidate_type == "OBSERVED_MARKET_OPPORTUNITY",
+            "final_top_10_eligible": qualified_strong, "top_3_to_source_eligible": qualified_strong and candidate_type == "OBSERVED_MARKET_OPPORTUNITY",
             "remaining_unknowns": [name for name, value in (("Amazon UAE price", observed_market_price), ("fee calculation price", fee_basis), ("demand score", demand["score"]), ("competition score", competition["score"]), ("risk score", risk["score"])) if value is None],
         })
     return sorted(results, key=lambda x: (x["validated_opportunity_score"] is not None, x["preliminary_opportunity_score"] or -1), reverse=True)

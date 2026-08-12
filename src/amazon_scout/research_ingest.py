@@ -10,15 +10,19 @@ from .evidence import freshness_for, load_bundle, parse_aware_datetime, utc_iso
 from .research_pipeline import analyze_evidence_bundle
 from .research_report import render_research_report
 from .risk_gap import build_risk_gap_plan
+from .serpapi_research import merge_serpapi_usage
 
 
-def ingest(path: str | Path, database: str | Path = "data/scout.db", *, quarantine_future: bool = False, slug_suffix: str = "", additional_evidence: str | Path | None = None) -> tuple[Path, Path, int]:
+def ingest(path: str | Path, database: str | Path = "data/scout.db", *, quarantine_future: bool = False, slug_suffix: str = "", additional_evidence: str | Path | None = None, usage_base: str | Path | None = None, usage_max_calls: int | None = None) -> tuple[Path, Path, int]:
     generated_at = datetime.now(timezone.utc)
     if additional_evidence:
         raw=json.loads(Path(path).read_text(encoding="utf-8")); extra=json.loads(Path(additional_evidence).read_text(encoding="utf-8")); raw["evidence"].extend(extra["evidence"])
         from .evidence import validate_bundle
         raw,records=validate_bundle(raw,validation_time=generated_at,quarantine_future=quarantine_future)
     else: raw, records = load_bundle(path, validation_time=generated_at, quarantine_future=quarantine_future)
+    if usage_base:
+        base_usage=json.loads(Path(usage_base).read_text(encoding="utf-8")).get("serpapi_usage")
+        raw["serpapi_usage"]=merge_serpapi_usage(base_usage,raw.get("serpapi_usage"),configured_max_calls=usage_max_calls)
     analyses = analyze_evidence_bundle(raw, records, generated_at=generated_at)
     raw["risk_gap_research_plan"] = build_risk_gap_plan(analyses, raw.get("serpapi_usage"))
     report = render_research_report(raw, analyses, generated_at=generated_at)
@@ -53,7 +57,7 @@ def ingest(path: str | Path, database: str | Path = "data/scout.db", *, quaranti
     stamp = generated_at.astimezone().strftime("%Y-%m-%d-%H%M%S")
     md = Path("reports") / f"{stamp}-{slug}.md"; js = md.with_suffix(".json")
     md.parent.mkdir(parents=True, exist_ok=True); md.write_text(report, encoding="utf-8")
-    normalized = {"research_run": raw["research_run"], "risk_gap_research_plan": raw.get("risk_gap_research_plan", {}), "validation_errors": raw.get("_validation_errors", []), "quarantined_evidence": raw.get("_quarantined_evidence", []), "analyses": [{k:v for k,v in item.items() if k != "evidence"} for item in analyses]}
+    normalized = {"research_run": raw["research_run"], "serpapi_usage": raw.get("serpapi_usage", {}), "risk_gap_research_plan": raw.get("risk_gap_research_plan", {}), "validation_errors": raw.get("_validation_errors", []), "quarantined_evidence": raw.get("_quarantined_evidence", []), "analyses": [{k:v for k,v in item.items() if k != "evidence"} for item in analyses]}
     payload = json.dumps(normalized, indent=2, default=str)
     js.write_text(payload, encoding="utf-8")
     Path("research/normalized").mkdir(parents=True, exist_ok=True)
@@ -65,11 +69,11 @@ def ingest(path: str | Path, database: str | Path = "data/scout.db", *, quaranti
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate and ingest a Codex research evidence bundle")
-    parser.add_argument("bundle"); parser.add_argument("--database", default="data/scout.db")
+    parser.add_argument("bundle"); parser.add_argument("--database", default="data/scout.db"); parser.add_argument("--usage-base",help="Earlier phase bundle whose SerpApi usage is accumulated into complete-run totals"); parser.add_argument("--usage-max-calls",type=int,help="Persisted complete-run ceiling when phase bundles used smaller caps")
     parser.add_argument("--quarantine-future", action="store_true", help="Exclude impossible future records and continue; default is rejection")
     parser.add_argument("--slug-suffix", default=""); parser.add_argument("--additional-evidence",help="Zero-paid gap-directed evidence fragment with an evidence array")
     args = parser.parse_args()
-    try: md, js, run_id = ingest(args.bundle,args.database,quarantine_future=args.quarantine_future,slug_suffix=args.slug_suffix,additional_evidence=args.additional_evidence)
+    try: md, js, run_id = ingest(args.bundle,args.database,quarantine_future=args.quarantine_future,slug_suffix=args.slug_suffix,additional_evidence=args.additional_evidence,usage_base=args.usage_base,usage_max_calls=args.usage_max_calls)
     except (ValueError,KeyError,json.JSONDecodeError) as exc:
         print(f"Evidence rejected: {exc}", file=__import__("sys").stderr); return 2
     print(f"Ingested research run {run_id}; report: {md}; JSON: {js}"); return 0

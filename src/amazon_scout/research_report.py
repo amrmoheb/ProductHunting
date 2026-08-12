@@ -53,10 +53,11 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
     raw["research_run"]["candidate_funnel"] = funnel
     cutoff = evidence_cutoff(records, generated_at)
     raw["research_run"]["evidence_cutoff"] = cutoff
-    qualified = [a for a in analyses if a["recommendation_tier"] == "VALIDATED_CANDIDATE"]
-    promising = [a for a in analyses if a["recommendation_tier"] in {"PROMISING_BUT_UNVALIDATED", "VALIDATED_WEAK_OPPORTUNITY"}]
+    technically_validated = [a for a in analyses if a.get("technically_validated")]
+    qualified = [a for a in analyses if a.get("qualified_strong_opportunity")]
+    promising = [a for a in analyses if a["recommendation_tier"] == "PROMISING_BUT_UNVALIDATED"]
     bundles = [a for a in analyses if a["candidate_type"] in {"BUNDLE_HYPOTHESIS", "DIFFERENTIATION_HYPOTHESIS"}]
-    premium_hypotheses = [a for a in analyses if a.get("commercial_opportunity_classification") == "PREMIUM_POSITIONING_HYPOTHESIS"]
+    premium_hypotheses = [a for a in analyses if a["recommendation_tier"] == "PREMIUM_POSITIONING_HYPOTHESIS"]
     gaps = [a for a in analyses if a["recommendation_tier"] == "EVIDENCE_GAP"]
     rejected = [a for a in analyses if a["recommendation_tier"] == "REJECTED_CONSTRAINT"]
     do_not = [a for a in analyses if a["recommendation_tier"] in {"HIGH_RISK", "DO_NOT_SOURCE"}]
@@ -67,10 +68,13 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
     usage=raw.get("serpapi_usage",{})
     lines += ["", "## SERPAPI USAGE", "", f"- Configured: {'yes' if usage.get('configured') else 'no'}", f"- Enabled: {'yes' if usage.get('enabled') else 'no'}", f"- Calls attempted: {usage.get('calls_attempted',0)}", f"- Calls succeeded: {usage.get('calls_succeeded',0)}", f"- Calls failed: {usage.get('calls_failed',0)}", f"- Calls saved by cache: {usage.get('calls_saved_by_cache',0)}", f"- Calls remaining from run budget: {usage.get('calls_remaining',usage.get('configured_max_calls',0))}", f"- Keywords searched: {', '.join(usage.get('keywords_queried',[])) or 'none'}", f"- Product detail calls: {usage.get('product_detail_calls',0)}", "- Budget scope: local run budget, not SerpApi account quota."]
     lines += ["", "## USER FILTERS", "", f"`{json.dumps(raw['research_run'].get('filters', {}), sort_keys=True)}`", "", "## CANONICAL CANDIDATE FUNNEL", ""]
-    for key in ("generated", "screened", "web_evidence_backed", "serpapi_validated", "price_gate_passed", "demand_gate_passed", "competition_gate_passed", "risk_gate_passed", "validated", "bundle_hypotheses", "finalists"):
+    for key in ("generated", "screened", "web_evidence_backed", "serpapi_validated", "price_gate_passed", "demand_gate_passed", "competition_gate_passed", "risk_gate_passed", "technically_validated", "strong_opportunities", "bundle_hypotheses", "finalists"):
         lines.append(f"- {key.replace('_',' ').title()}: {funnel[key]}")
-    lines += ["", f"## QUALIFIED FINALISTS — {len(qualified)}", ""]
-    if not qualified: lines.append("No candidates met every required evidence gate and the 60% confidence threshold. Only 0 candidates qualified; weak candidates were not promoted to fill a Top 10.")
+    lines += ["", f"## TECHNICALLY VALIDATED — {len(technically_validated)}", ""]
+    if not technically_validated: lines.append("No candidates passed price, demand, competition, risk, and the 60% confidence gate.")
+    for index, item in enumerate(technically_validated, 1): lines.extend(_candidate_detail(item, index))
+    lines += ["", f"## QUALIFIED STRONG OPPORTUNITIES — {len(qualified)}", ""]
+    if not qualified: lines.append("No technically validated candidate reached the configured validated opportunity score threshold of 65. Technically validated weak candidates did not fail their evidence gates; their deterministic opportunity scores were simply below the recommendation threshold. Under the former combined label this was `QUALIFIED FINALISTS — 0`; weak candidates were not promoted merely to fill a requested count.")
     for index, item in enumerate(qualified, 1): lines.extend(_candidate_detail(item, index))
     lines += ["", "## PROMISING BUT UNVALIDATED", ""]
     if not promising: lines.append("None.")
@@ -96,7 +100,7 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
     if not do_not: lines.append("No candidate has enough strong negative evidence for a definitive do-not-source classification; unresolved candidates remain validation targets only.")
     for item in do_not: lines.extend(_candidate_detail(item))
     source_targets = [a for a in qualified if a["top_3_to_source_eligible"]][:3]
-    validate_targets = [a for a in analyses if not a["top_3_to_source_eligible"] and a["preliminary_opportunity_score"] is not None][:3]
+    validate_targets = [a for a in analyses if not a.get("technically_validated") and a["preliminary_opportunity_score"] is not None][:3]
     lines += ["", "## TOP 3 TO SOURCE", ""]
     if not source_targets: lines.append("None. Confidence and evidence gates prevent sourcing recommendations.")
     for item in source_targets: lines.append(f"- {item['niche']}")

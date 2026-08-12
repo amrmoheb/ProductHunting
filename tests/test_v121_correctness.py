@@ -70,7 +70,7 @@ class V121CorrectnessTests(unittest.TestCase):
         a=analyze_evidence_bundle(raw,records,generated_at=NOW)[0]; self.assertEqual(a["risk_status"],"UNKNOWN"); self.assertIsNone(a["risk_score"])
 
     def test_candidate_rescored_after_authoritative_risk_evidence(self):
-        fixture=json.load(open("tests/fixtures/serpapi_amazon_ae_search.json")); normalized=normalize_search_response(fixture,niche="pet mats",keyword="silicone pet feeding mat",run_id="r",retrieved_at=TS)
+        fixture=json.load(open("tests/fixtures/serpapi_amazon_ae_search.json")); fixture["organic_results"].append({"position":6,"asin":"B0AE000006","sponsored":False,"brand":"PawTray","title":"Silicone Pet Feeding Mat Large Waterproof Raised Edge","rating":4.3,"reviews":64,"price":"AED 79","extracted_price":79.0,"link_clean":"https://www.amazon.ae/dp/B0AE000006"}); normalized=normalize_search_response(fixture,niche="pet mats",keyword="silicone pet feeding mat",run_id="r",retrieved_at=TS)
         records=[EvidenceRecord.from_dict(x,"r",validation_time=NOW) for x in normalized["evidence"]]
         raw={"research_run":{"id":"r","marketplace":"amazon.ae","started_at":TS,"evidence_cutoff":TS,"filters":{"price_min_aed":50,"price_max_aed":150},"candidate_funnel":{"generated":1,"screened":1}},"keywords":[],"products":normalized["products"],"evidence":normalized["evidence"],"source_summary":{}}
         before=analyze_evidence_bundle(raw,records,generated_at=NOW)[0]

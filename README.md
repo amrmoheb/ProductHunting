@@ -192,6 +192,12 @@ Reports retain the all-relevant price distribution for market context, but price
 
 A non-null validated opportunity score means enough evidence exists to calculate it. It does not mean the opportunity is attractive or that inventory should be purchased. Scores below the configured recommendation threshold are labeled `VALIDATED_WEAK_OPPORTUNITY`; recommendation strength and the unchanged 60% sourcing-confidence threshold remain separate.
 
+#### V1.2.3 canonical gates and report semantics
+
+All candidates—including broad/generic commercial profiles—use the same price-gate function: at least five current comparable Amazon.ae prices, then either an in-range median or an in-band ratio of at least 40%. A below-floor core market with an observable in-band premium tail is classified canonically as `PREMIUM_POSITIONING_HYPOTHESIS`; it cannot simultaneously remain a validated core opportunity.
+
+Reports distinguish `TECHNICALLY VALIDATED` (price, demand, competition, risk, and confidence ≥60 all pass) from `QUALIFIED STRONG OPPORTUNITIES` (technical validation plus validated score ≥65). Multi-phase SerpApi runs accumulate one persisted complete-run usage record; phase subtotals never replace the report header total.
+
 ### Optional provider cost controls
 
 Paid calls are disabled by default even when a key exists:
