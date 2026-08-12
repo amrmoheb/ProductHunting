@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$PROJECT_ROOT"
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    key="${key%$'\r'}"; value="${value%$'\r'}"
+    case "$key" in SERPAPI_API_KEY|RESEARCH_ALLOW_PAID_PROVIDERS|RESEARCH_MAX_PAID_CALLS|RESEARCH_MAX_COST_USD|SERPAPI_CACHE_TTL_HOURS)
+      if [[ "$value" == \"*\" ]] || [[ "$value" == \'*\' ]]; then value="${value:1:${#value}-2}"; fi
+      export "$key=$value";; esac
+  done < .env
+fi
+PYTHONPATH=src exec python3 -m amazon_scout.serpapi_research "$@"

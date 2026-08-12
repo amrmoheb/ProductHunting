@@ -1,0 +1,19 @@
+{
+  "last_verified_at": "2026-08-12T00:00:00Z",
+  "source_urls": [
+    "https://sell.amazon.ae/pricing",
+    "https://sell.amazon.ae/fulfillment-by-amazon"
+  ],
+  "fee_assumptions": {
+    "currency": "AED",
+    "referral_fee": "Varies by category; ingest a current official observation before applying a rate.",
+    "fba_fulfillment_fee": "Depends on dimensions, shipping weight, and tier; unknown without sufficient inputs."
+  },
+  "category_referral_fee_rules": [
+    {"category": "Home", "rate": 0.15, "minimum_aed": 1, "status": "observed_official_schedule"},
+    {"category": "Kitchen", "rate": 0.15, "minimum_aed": 1, "status": "observed_official_schedule"}
+  ],
+  "fee_status": "estimated",
+  "confidence": "HIGH",
+  "notes": "Verified from the current public page on 2026-08-12. Refresh before use: schedules can change. FBA begins at AED 7.5 but exact fees require packaged dimensions, weight, price, and tier; VAT and storage/other fees are additional."
+}

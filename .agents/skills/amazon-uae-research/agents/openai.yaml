@@ -1,0 +1,4 @@
+interface:
+  display_name: "Amazon UAE Research"
+  short_description: "Research evidence-backed Amazon UAE product opportunities"
+  default_prompt: "Research Amazon UAE product opportunities with current web evidence, ingest the evidence bundle, and explain deterministic scores."

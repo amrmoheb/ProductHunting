@@ -1,0 +1,12 @@
+{
+  "clock_skew_minutes": 5,
+  "serpapi_cache_ttl_hours": 8,
+  "windows_days": {
+    "retail_price": {"current": 7, "aging": 14},
+    "amazon_indexed": {"current": 14, "aging": 30},
+    "amazon_rank": {"current": 7, "aging": 14},
+    "official_fee": {"current": 30, "aging": 60},
+    "regulatory": {"current": 90, "aging": 180},
+    "default": {"current": 14, "aging": 30}
+  }
+}

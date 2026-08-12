@@ -1,0 +1,7 @@
+{
+  "marketplace": {"name": "Amazon UAE", "domain": "Amazon.ae", "id": "A2VIGQ35RCS4UG", "region": "eu", "base_url": "https://sellingpartnerapi-eu.amazon.com", "currency": "AED"},
+  "defaults": {"minimum_selling_price_aed": 40, "maximum_selling_price_aed": 200, "target_margin": 0.25, "preferred_max_weight_kg": 1.5},
+  "excluded_or_penalized": ["supplements", "medicines", "hazardous materials", "adult products", "complex electronics", "highly fragile products", "trademark/counterfeit risk"],
+  "seed_niches": ["drawer organizers", "silicone kitchen utensils", "car trunk organizer", "cable management", "travel packing cubes", "reusable food storage", "desk organizers", "pet grooming tools", "yoga accessories", "bathroom storage"]
+}
+

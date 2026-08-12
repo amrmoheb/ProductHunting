@@ -1,0 +1,25 @@
+# Project-scoped Codex configuration. Restart/trust the project after changes.
+# Credentials are forwarded from the process environment; they never live here.
+web_search = "live"
+
+[mcp_servers.sp-api-dev-assistant]
+command = "npx"
+args = ["-y", "@amazon-sp-api-release/sp-api-dev-mcp", "sp-api-dev-assistant-mcp-server"]
+env_vars = ["SP_API_CLIENT_ID", "SP_API_CLIENT_SECRET", "SP_API_REFRESH_TOKEN"]
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+[mcp_servers.sp-api-dev-assistant.env]
+SP_API_REGION = "eu"
+SP_API_BASE_URL = "https://sellingpartnerapi-eu.amazon.com"
+
+[mcp_servers.sp-api-workflow]
+command = "npx"
+args = ["-y", "@amazon-sp-api-release/sp-api-dev-mcp", "sp-api-workflow-mcp-server"]
+env_vars = ["SP_API_CLIENT_ID", "SP_API_CLIENT_SECRET", "SP_API_REFRESH_TOKEN"]
+startup_timeout_sec = 30
+tool_timeout_sec = 180
+
+[mcp_servers.sp-api-workflow.env]
+SP_API_REGION = "eu"
+SP_API_BASE_URL = "https://sellingpartnerapi-eu.amazon.com"

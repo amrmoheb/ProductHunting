@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+set -euo pipefail
+TEST_SERPAPI=false
+if [ "${1:-}" = "--test-serpapi" ]; then TEST_SERPAPI=true; shift; fi
+if [ "$#" -gt 0 ]; then echo "Usage: ./scripts/research-doctor [--test-serpapi]" >&2; exit 2; fi
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$PROJECT_ROOT"
+if [ -f .env ]; then
+  while IFS='=' read -r key value; do
+    key="${key%$'\r'}"; value="${value%$'\r'}"
+    case "$key" in SP_API_CLIENT_ID|SP_API_CLIENT_SECRET|SP_API_REFRESH_TOKEN|SERPAPI_API_KEY|DATAFORSEO_LOGIN|DATAFORSEO_PASSWORD|RAINFOREST_API_KEY|RESEARCH_ALLOW_PAID_PROVIDERS|RESEARCH_MAX_PAID_CALLS|RESEARCH_MAX_COST_USD|SERPAPI_CACHE_TTL_HOURS)
+      if [[ "$value" == \"*\" ]] || [[ "$value" == \'*\' ]]; then value="${value:1:${#value}-2}"; fi
+      export "$key=$value";; esac
+  done < .env
+fi
+status() { local label="$1"; shift; if "$@"; then printf '%-30s READY\n' "$label"; else printf '%-30s NOT CONFIGURED\n' "$label"; fi; }
+present() { [ -n "${!1:-}" ]; }
+all_present() { local key; for key in "$@"; do present "$key" || return 1; done; }
+echo "Amazon UAE Research Sources"; echo
+printf '%-30s READY\n' "Codex live web search"
+printf '%-30s READY\n' "Amazon public web"
+status "SerpApi" present SERPAPI_API_KEY
+status "DataForSEO" all_present DATAFORSEO_LOGIN DATAFORSEO_PASSWORD
+status "Rainforest" present RAINFOREST_API_KEY
+status "Amazon SP-API" all_present SP_API_CLIENT_ID SP_API_CLIENT_SECRET SP_API_REFRESH_TOKEN
+printf '%-30s %s\n' "SerpApi paid-provider use" "$([ "${RESEARCH_ALLOW_PAID_PROVIDERS:-false}" = "true" ] && echo ENABLED || echo DISABLED)"
+printf '%-30s %s\n' "SerpApi max calls/run" "${RESEARCH_MAX_PAID_CALLS:-0}"
+printf '%-30s USD %s\n' "SerpApi max configured cost" "${RESEARCH_MAX_COST_USD:-0}"
+printf '%-30s %s\n' "SerpApi secret" "$([ -n "${SERPAPI_API_KEY:-}" ] && echo PRESENT || echo MISSING)"
+if [ "$TEST_SERPAPI" = "false" ]; then printf '%-30s NOT RUN\n' "SerpApi amazon.ae test"; fi
+echo
+echo "Mode recommendation:"
+if grep -Eq '^web_search[[:space:]]*=[[:space:]]*"live"' .codex/config.toml; then echo "RESEARCH MODE READY"; else echo "NOT READY — web_search is not live"; exit 1; fi
+[ "${RESEARCH_ALLOW_PAID_PROVIDERS:-false}" = "true" ] || echo "Paid provider calls: DISABLED (safe default)"
+if [ "$TEST_SERPAPI" = "true" ]; then
+  if [ -z "${SERPAPI_API_KEY:-}" ] || [ "${RESEARCH_ALLOW_PAID_PROVIDERS:-false}" != "true" ] || [ "${RESEARCH_MAX_PAID_CALLS:-0}" -le 0 ] || ! python3 -c 'import os; raise SystemExit(float(os.environ.get("RESEARCH_MAX_COST_USD","0")) <= 0)'; then
+    echo "SerpApi test blocked: key and all paid-provider safety controls must be enabled." >&2; exit 2
+  fi
+  PYTHONPATH=src python3 -m amazon_scout.serpapi_doctor
+fi

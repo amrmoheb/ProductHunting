@@ -1,0 +1,22 @@
+{
+  "weights": {
+    "demand": 0.30,
+    "competition_attractiveness": 0.20,
+    "margin_potential": 0.20,
+    "price_attractiveness": 0.10,
+    "risk_attractiveness": 0.10,
+    "differentiation_potential": 0.10
+  },
+  "bands": [[85, "Exceptional candidate"], [75, "Strong candidate"], [65, "Worth deeper research"], [50, "Weak/uncertain"], [0, "Avoid unless special reason"]],
+  "confidence": {
+    "brand_analytics": 20,
+    "pricing": 15,
+    "sales_rank": 15,
+    "sample_size": 15,
+    "fee_estimate": 20,
+    "recent": 15,
+    "adequate_sample_size": 5,
+    "recent_days": 7
+  },
+  "research_gates": {"top_3_minimum_confidence": 60, "minimum_current_observations": 2}
+}

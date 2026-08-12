@@ -1,0 +1,11 @@
+{
+  "search_metadata":{"status":"Success","id":"fixture"},
+  "search_parameters":{"engine":"amazon","amazon_domain":"amazon.ae","k":"silicone pet feeding mat","page":1},
+  "organic_results":[
+    {"position":1,"asin":"B0AE000001","sponsored":true,"brand":"PetNeat","title":"XL Silicone Pet Feeding Mat Raised Edge","rating":4.5,"reviews":420,"bought_last_month":"100+ bought in past month","price":"AED 89.00","extracted_price":89.0,"old_price":"AED 109","extracted_old_price":109.0,"prime":true,"stock":"In stock","badges":["Best Seller"],"options":"2 sizes","link_clean":"https://www.amazon.ae/dp/B0AE000001"},
+    {"position":2,"asin":"B0AE000002","sponsored":false,"brand":"BowlGuard","title":"Large Silicone Dog Bowl Mat Waterproof","rating":4.2,"reviews":85,"price":"AED 69.50","extracted_price":69.5,"prime":true,"link_clean":"https://www.amazon.ae/dp/B0AE000002"},
+    {"position":3,"asin":"B0AE000003","sponsored":false,"brand":"PetNeat","title":"Silicone Pet Feeding Mat XL Non Slip","rating":4.4,"reviews":210,"bought_last_month":"1K+ bought in past month","price":"AED 129","extracted_price":129.0,"link_clean":"https://www.amazon.ae/dp/B0AE000003"},
+    {"position":4,"asin":"B0AE000004","sponsored":true,"brand":"FloorPaw","title":"Raised Edge Silicone Feeding Mat for Dogs","rating":4.0,"reviews":20,"price":"AED 45","extracted_price":45.0,"link_clean":"https://www.amazon.ae/dp/B0AE000004"},
+    {"position":5,"asin":"B0AE000005","sponsored":false,"brand":"ReadCo","title":"The Complete Pet Feeding Book","rating":4.8,"reviews":12,"price":"AED 55","extracted_price":55.0,"link_clean":"https://www.amazon.ae/dp/B0AE000005"}
+  ]
+}

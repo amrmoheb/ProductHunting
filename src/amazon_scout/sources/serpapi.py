@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import math
+import os
+import re
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections import Counter
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from statistics import median
+from typing import Any, Callable
+
+from .base import PaidProviderBudget, ResearchSource
+
+AMAZON_DOMAIN = "amazon.ae"
+MARKETPLACE_ID = "A2VIGQ35RCS4UG"
+ENDPOINT = "https://serpapi.com/search.json"
+
+
+def request_fingerprint(params: dict[str, Any]) -> str:
+    safe = {str(k): v for k, v in params.items() if k != "api_key" and v is not None}
+    canonical = json.dumps(safe, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode()).hexdigest()
+
+
+@dataclass
+class SerpApiBudget(PaidProviderBudget):
+    reserve_calls: int = 5
+    keywords_queried: list[str] = field(default_factory=list)
+    asins_queried: list[str] = field(default_factory=list)
+    purposes: list[dict[str, str]] = field(default_factory=list)
+
+    @classmethod
+    def from_environment(cls) -> "SerpApiBudget":
+        base = PaidProviderBudget.from_environment()
+        return cls(base.allow, base.max_calls, base.max_cost_usd)
+
+    def authorize_request(self, params: dict[str, Any], purpose: str, *, use_reserve: bool = False, estimated_cost_usd: float = 0) -> None:
+        if self.calls_remaining <= 0:
+            raise PermissionError("SerpApi local run call budget exhausted")
+        if not use_reserve and self.calls_remaining <= self.reserve_calls:
+            raise PermissionError("SerpApi reserve protected; this call is not marked high-value gap-directed validation")
+        self.authorize(estimated_cost_usd)
+        keyword = str(params.get("k") or "")
+        asin = str(params.get("asin") or "")
+        if keyword and keyword not in self.keywords_queried: self.keywords_queried.append(keyword)
+        if asin and asin not in self.asins_queried: self.asins_queried.append(asin)
+        self.purposes.append({"fingerprint": request_fingerprint(params), "purpose": purpose, "engine": str(params.get("engine"))})
+
+    def usage(self, *, configured: bool) -> dict[str, Any]:
+        return {
+            "configured": configured, "enabled": self.allow and self.max_calls > 0 and self.max_cost_usd > 0,
+            "configured_max_calls": self.max_calls, "calls_attempted": self.calls_attempted,
+            "calls_succeeded": self.calls_succeeded, "calls_failed": self.calls_failed,
+            "calls_saved_by_cache": self.calls_saved_by_cache, "calls_remaining": self.calls_remaining,
+            "estimated_cost_usd": self.cost_used_usd, "keywords_queried": list(self.keywords_queried),
+            "asins_queried": list(self.asins_queried), "product_detail_calls": sum(p["engine"] == "amazon_product" for p in self.purposes),
+            "purpose_for_each_call": list(self.purposes), "local_budget_note": "Local run budget; not SerpApi account quota."
+        }
+
+
+class SerpApiCache:
+    def __init__(self, root: str | Path = "research/cache/serpapi", ttl_hours: float | None = None) -> None:
+        self.root = Path(root)
+        self.ttl = timedelta(hours=ttl_hours if ttl_hours is not None else float(os.getenv("SERPAPI_CACHE_TTL_HOURS", "8")))
+
+    def get(self, params: dict[str, Any], now: datetime | None = None) -> dict[str, Any] | None:
+        path = self.root / f"{request_fingerprint(params)}.json"
+        if not path.exists(): return None
+        try: payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError): return None
+        retrieved = datetime.fromisoformat(payload["retrieved_at"].replace("Z", "+00:00"))
+        if (now or datetime.now(timezone.utc)) - retrieved > self.ttl: return None
+        return payload["response"]
+
+    def put(self, params: dict[str, Any], response: dict[str, Any], now: datetime | None = None) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+        payload = {"request_fingerprint": request_fingerprint(params), "request_parameters": {k:v for k,v in params.items() if k != "api_key"}, "retrieved_at": (now or datetime.now(timezone.utc)).isoformat().replace("+00:00", "Z"), "response": response, "normalized_evidence_ids": []}
+        (self.root / f"{request_fingerprint(params)}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+class SerpApiSource(ResearchSource):
+    name = "SerpApi"
+    paid = True
+    required_env = ("SERPAPI_API_KEY",)
+
+    @staticmethod
+    def search_params(keyword: str, *, page: int = 1) -> dict[str, Any]:
+        if not keyword.strip(): raise ValueError("SerpApi Amazon keyword must not be empty")
+        return {"engine": "amazon", "amazon_domain": AMAZON_DOMAIN, "k": keyword.strip(), "page": page}
+
+    @staticmethod
+    def product_params(asin: str) -> dict[str, Any]:
+        if not re.fullmatch(r"[A-Z0-9]{10}", asin.strip().upper()): raise ValueError("Invalid ASIN")
+        return {"engine": "amazon_product", "amazon_domain": AMAZON_DOMAIN, "asin": asin.strip().upper()}
+
+    def build_search_request(self, keyword: str, budget: PaidProviderBudget) -> tuple[str, dict[str, str]]:
+        budget.authorize()
+        return ENDPOINT, {**self.search_params(keyword), "api_key": os.environ["SERPAPI_API_KEY"]}
+
+    def execute(self, params: dict[str, Any], budget: SerpApiBudget, cache: SerpApiCache, purpose: str, *, use_reserve: bool = False, transport: Callable[[str], dict[str, Any]] | None = None) -> tuple[dict[str, Any] | None, str]:
+        self._validate_params(params)
+        cached = cache.get(params)
+        if cached is not None:
+            self._validate_response(cached, params["engine"])
+            budget.calls_saved_by_cache += 1
+            keyword=str(params.get("k") or ""); asin=str(params.get("asin") or "")
+            if keyword and keyword not in budget.keywords_queried: budget.keywords_queried.append(keyword)
+            if asin and asin not in budget.asins_queried: budget.asins_queried.append(asin)
+            return cached, "CACHE"
+        key = os.getenv("SERPAPI_API_KEY")
+        if not key: raise PermissionError("SerpApi is not configured")
+        budget.authorize_request(params, purpose, use_reserve=use_reserve)
+        try:
+            if transport:
+                payload = transport(ENDPOINT + "?" + urllib.parse.urlencode({**params, "api_key": key}))
+            else:
+                request = urllib.request.Request(ENDPOINT + "?" + urllib.parse.urlencode({**params, "api_key": key}), headers={"Accept":"application/json","User-Agent":"amazon-uae-product-scout/1.2"})
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+            self._validate_response(payload, params["engine"])
+            cache.put(params, payload); budget.succeeded()
+            return payload, "LIVE"
+        except Exception as exc:
+            budget.failed()
+            # Never include transport URLs/query strings because they contain the API key.
+            return None, f"{type(exc).__name__}: SerpApi request failed or returned invalid UAE data"
+
+    @staticmethod
+    def _validate_params(params: dict[str, Any]) -> None:
+        if params.get("amazon_domain") != AMAZON_DOMAIN: raise ValueError("SerpApi request rejected: amazon_domain must be amazon.ae")
+        if params.get("engine") not in {"amazon", "amazon_product"}: raise ValueError("Unsupported SerpApi engine")
+
+    @staticmethod
+    def _validate_response(payload: dict[str, Any], engine: str) -> None:
+        if not isinstance(payload, dict): raise ValueError("Malformed SerpApi response")
+        if payload.get("error"): raise ValueError("SerpApi provider returned an error")
+        params = payload.get("search_parameters") or {}
+        if params.get("amazon_domain") != AMAZON_DOMAIN: raise ValueError("Non-UAE SerpApi response rejected")
+        if params.get("engine") != engine: raise ValueError("SerpApi response engine mismatch")
+        status = (payload.get("search_metadata") or {}).get("status")
+        if status and status != "Success": raise ValueError("SerpApi search did not succeed")
+
+
+def parse_bought_last_month(value: Any) -> tuple[str | None, int | None, bool]:
+    if not isinstance(value, str) or not value.strip(): return None, None, False
+    match = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([KkMm]?)\s*\+?", value)
+    if not match: return value, None, False
+    multiplier = {"":1,"k":1000,"m":1_000_000}[match.group(2).lower()]
+    return value, int(float(match.group(1)) * multiplier), False
+
+
+def _percentile(values: list[float], q: float) -> float | None:
+    if not values: return None
+    ordered=sorted(values); index=(len(ordered)-1)*q; low=math.floor(index); high=math.ceil(index)
+    return round(ordered[low] if low==high else ordered[low]*(high-index)+ordered[high]*(index-low),2)
+
+
+def _aed_price(result: dict[str, Any]) -> float | None:
+    raw=str(result.get("price") or "").upper()
+    value=result.get("extracted_price")
+    return float(value) if isinstance(value,(int,float)) and ("AED" in raw or "د.إ" in raw) else None
+
+
+def normalize_search_response(payload: dict[str, Any], *, niche: str, keyword: str, run_id: str, retrieved_at: str, relevant: Callable[[dict[str, Any]], tuple[bool,str | None]] | None = None, price_min_aed: float = 50, price_max_aed: float = 150) -> dict[str, Any]:
+    SerpApiSource._validate_response(payload, "amazon")
+    considered=[]; excluded=[]
+    for result in payload.get("organic_results") or []:
+        ok, reason = relevant(result) if relevant else (bool(result.get("asin") and result.get("title")), "missing ASIN/title")
+        (considered if ok else excluded).append(result if ok else {"asin":result.get("asin"),"reason":reason or "irrelevant"})
+    products=[]; evidence=[]
+    for index,result in enumerate(considered):
+        asin=result.get("asin"); prefix=f"serpapi-{request_fingerprint({'run':run_id,'keyword':keyword,'asin':asin,'index':index})[:20]}"
+        product={key:result.get(key) for key in ("asin","title","brand","rating","reviews","sponsored","position","prime","stock","badges","options","variants","bought_last_month","link_clean")}
+        current_price=_aed_price(result)
+        product.update({"niche":niche,"marketplace":"amazon.ae","current_price_aed":current_price,"original_price_aed":result.get("extracted_old_price") if current_price is not None else None})
+        products.append(product)
+        metrics=(("current_price_aed",current_price,"AED"),("rating",result.get("rating"),"stars"),("review_count",result.get("reviews"),"reviews"),("sponsored_status",result.get("sponsored"),None),("search_position",result.get("position"),"position"),("brand",result.get("brand"),None),("asin",asin,None),("amazon_visibility",1,"visible_result"))
+        raw_bought,lower,is_exact=parse_bought_last_month(result.get("bought_last_month"))
+        for metric,value,unit in metrics:
+            if value is not None: evidence.append(_evidence(f"{prefix}-{metric}",metric,value,unit,asin,keyword,niche,retrieved_at,False, f"SerpApi Amazon.ae organic result; query={keyword}"))
+        if raw_bought is not None:
+            evidence.append(_evidence(f"{prefix}-bought-raw","bought_last_month_raw",raw_bought,None,asin,keyword,niche,retrieved_at,False,"Amazon-displayed purchase signal; not exact monthly sales."))
+        if lower is not None:
+            evidence.append(_evidence(f"{prefix}-bought-lower","monthly_purchase_signal_lower_bound",lower,"units_lower_bound",asin,keyword,niche,retrieved_at,True,f"Conservative parse of '{raw_bought}'; is_exact={str(is_exact).lower()}"))
+    prices=[float(p["current_price_aed"]) for p in products if isinstance(p.get("current_price_aed"),(int,float))]
+    reviews=[float(p["reviews"]) for p in products if isinstance(p.get("reviews"),(int,float))]
+    ratings=[float(p["rating"]) for p in products if isinstance(p.get("rating"),(int,float))]
+    brands=[str(p["brand"]).strip() for p in products if p.get("brand")]; sponsored=[bool(p["sponsored"]) for p in products if p.get("sponsored") is not None]
+    in_band=sum(price_min_aed <= price <= price_max_aed for price in prices)
+    sponsored_complete=bool(products) and len(sponsored)==len(products)
+    aggregates={"total_results_received":len(payload.get("organic_results") or []),"results_considered_relevant":len(products),"results_excluded":len(excluded),"exclusion_reasons":dict(Counter(x["reason"] for x in excluded)),"amazon_uae_price_sample_size":len(prices),"price_min_aed":min(prices) if prices else None,"price_p25_aed":_percentile(prices,.25),"price_median_aed":median(prices) if prices else None,"price_mean_aed":round(sum(prices)/len(prices),2) if prices else None,"price_p75_aed":_percentile(prices,.75),"price_max_aed":max(prices) if prices else None,"price_dispersion":round((max(prices)-min(prices))/median(prices),3) if prices and median(prices) else None,"in_target_price_band_count":in_band,"in_target_price_band_ratio":in_band/len(prices) if prices else None,"relevant_result_count":len(products),"unique_asin_count":len({p['asin'] for p in products if p.get('asin')}),"unique_brand_count":len(set(brands)),"top_brand_share":max(Counter(brands).values())/len(brands) if brands else None,"brand_concentration":sum((c/len(brands))**2 for c in Counter(brands).values()) if brands else None,"sponsored_sample_size":len(sponsored),"sponsored_count":sum(sponsored) if sponsored else None,"sponsored_density":sum(sponsored)/len(sponsored) if sponsored_complete else None,"rating_sample_size":len(ratings),"median_rating":median(ratings) if ratings else None,"review_sample_size":len(reviews),"median_reviews":median(reviews) if reviews else None,"p75_reviews":_percentile(reviews,.75),"p90_reviews":_percentile(reviews,.90)}
+    for metric in ("relevant_result_count","brand_concentration","top_brand_share","sponsored_density","median_rating","median_reviews","p75_reviews"):
+        if aggregates.get(metric) is not None: evidence.append(_evidence(f"serpapi-{request_fingerprint({'run':run_id,'keyword':keyword,'metric':metric})[:20]}",metric,aggregates[metric],None,None,keyword,niche,retrieved_at,True,"Derived from the current relevant SerpApi Amazon.ae result sample."))
+    return {"products":products,"evidence":evidence,"aggregates":aggregates,"excluded_results":excluded,"serpapi_keyword":keyword}
+
+
+def normalize_product_response(payload: dict[str, Any], *, niche: str, keyword: str, run_id: str, retrieved_at: str) -> dict[str, Any]:
+    SerpApiSource._validate_response(payload, "amazon_product")
+    result=payload.get("product_results") or {}
+    asin=result.get("asin") or (payload.get("search_parameters") or {}).get("asin")
+    current_price=_aed_price(result)
+    product={"niche":niche,"marketplace":"amazon.ae","asin":asin,"title":result.get("title"),"brand":result.get("brand"),"current_price_aed":current_price,"rating":result.get("rating"),"review_count":result.get("reviews"),"availability":result.get("availability"),"variants":result.get("variants"),"product_details":result.get("product_details"),"dimensions":result.get("dimensions")}
+    evidence=[]; prefix=f"serpapi-product-{request_fingerprint({'run':run_id,'asin':asin})[:20]}"
+    for metric,value,unit in (("current_price_aed",current_price,"AED"),("rating",result.get("rating"),"stars"),("review_count",result.get("reviews"),"reviews"),("brand",result.get("brand"),None),("availability",result.get("availability"),None)):
+        if value is not None: evidence.append(_evidence(f"{prefix}-{metric}",metric,value,unit,asin,keyword,niche,retrieved_at,False,"SerpApi Amazon Product API observation for amazon.ae."))
+    return {"products":[product],"evidence":evidence,"serpapi_keyword":keyword}
+
+
+def _evidence(identifier: str, metric: str, value: Any, unit: str | None, asin: str | None, keyword: str, niche: str, timestamp: str, estimate: bool, notes: str) -> dict[str, Any]:
+    return {"id":identifier,"metric_name":metric,"metric_value":value,"metric_unit":unit,"asin":asin,"keyword":keyword,"niche":niche,"marketplace":"amazon.ae","marketplace_id":MARKETPLACE_ID,"market_relevance":"AMAZON_UAE","source_timezone":"UTC","source_provider":"serpapi","source_type":"derived_metric" if estimate and metric in {"relevant_result_count","brand_concentration","top_brand_share","sponsored_density","median_rating","median_reviews","p75_reviews"} else "amazon_search","source_url":f"https://www.amazon.ae/dp/{asin}" if asin else None,"source_title":"SerpApi Amazon Search API — amazon.ae","observed_at":timestamp,"retrieved_at":timestamp,"confidence":"HIGH" if metric in {"current_price_aed","rating","review_count","sponsored_status","search_position","monthly_purchase_signal_lower_bound"} else "MEDIUM","is_estimate":estimate,"notes":notes}

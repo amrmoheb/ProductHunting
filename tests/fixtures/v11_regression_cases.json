@@ -1,0 +1,5 @@
+{
+  "case_a": {"description": "External UAE price AED 130, Amazon price unknown, zero demand", "expected": {"price_gate": false, "demand_gate": false, "validated_score": null}},
+  "case_b": {"description": "Observed Amazon unit AED 25.69 with proposed two-pack AED 69", "expected": {"candidate_type": "BUNDLE_HYPOTHESIS", "observed_market_price_aed": 25.69, "proposed_selling_price_aed": 69, "fee_calculation_price_aed": 69, "price_gate": false}},
+  "case_c": {"description": "Competition inputs mostly unknown", "expected": {"competition_status": "INSUFFICIENT", "competition_score": null, "competition_gate": false}}
+}

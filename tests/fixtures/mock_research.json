@@ -1,0 +1,18 @@
+{
+  "marketplace_id": "A2VIGQ35RCS4UG",
+  "niches": [
+    {"name":"drawer organizers","catalog_result_count":340,"brand_analytics_available":false,"fees_aed":16.5,"products":[
+      {"asin":"B0UAE00001","title":"Expandable drawer organizer","brand":"NeatHome","product_type":"HOME","weight_kg":0.7,"variation_count":3,"price_aed":89.0,"sales_rank":4200,"offer_count":3,"amazon_retail_present":false,"source":"mock_sp_api"},
+      {"asin":"B0UAE00002","title":"Bamboo cutlery tray","brand":"OrganizeIt","product_type":"HOME","weight_kg":1.2,"variation_count":2,"price_aed":109.0,"sales_rank":8100,"offer_count":2,"amazon_retail_present":false,"source":"mock_sp_api"},
+      {"asin":"B0UAE00003","title":"Plastic drawer divider set","brand":"SimpleSpace","product_type":"HOME","weight_kg":0.4,"variation_count":4,"price_aed":59.0,"sales_rank":12000,"offer_count":4,"amazon_retail_present":false,"source":"mock_sp_api"},
+      {"asin":"B0UAE00004","title":"Adjustable drawer dividers","brand":"Casa","product_type":"HOME","weight_kg":0.6,"variation_count":1,"price_aed":74.0,"sales_rank":6200,"offer_count":3,"amazon_retail_present":false,"source":"mock_sp_api"},
+      {"asin":"B0UAE00005","title":"Sock drawer organizer","brand":"FoldWell","product_type":"HOME","weight_kg":0.3,"variation_count":2,"price_aed":49.0,"sales_rank":15000,"offer_count":2,"amazon_retail_present":false,"source":"mock_sp_api"}]},
+    {"name":"car trunk organizer","catalog_result_count":510,"brand_analytics_available":false,"fees_aed":22.0,"products":[
+      {"asin":"B0UAE00006","title":"Collapsible car trunk organizer","brand":"RoadReady","product_type":"AUTOMOTIVE","weight_kg":1.1,"variation_count":2,"price_aed":119.0,"sales_rank":3500,"offer_count":5,"amazon_retail_present":false,"source":"mock_sp_api"},
+      {"asin":"B0UAE00007","title":"Large boot storage organizer","brand":"AutoNest","product_type":"AUTOMOTIVE","weight_kg":1.4,"variation_count":3,"price_aed":139.0,"sales_rank":6900,"offer_count":6,"amazon_retail_present":true,"source":"mock_sp_api"},
+      {"asin":"B0UAE00008","title":"Foldable vehicle storage box","brand":"DriveTidy","product_type":"AUTOMOTIVE","weight_kg":0.9,"variation_count":1,"price_aed":84.0,"sales_rank":11000,"offer_count":4,"amazon_retail_present":false,"source":"mock_sp_api"}]},
+    {"name":"battery portable blender","catalog_result_count":950,"brand_analytics_available":false,"fees_aed":28.0,"products":[
+      {"asin":"B0UAE00009","title":"Rechargeable battery portable blender","brand":"BlendGo","product_type":"ELECTRONICS","weight_kg":0.8,"variation_count":5,"price_aed":129.0,"sales_rank":2100,"offer_count":12,"amazon_retail_present":true,"source":"mock_sp_api"},
+      {"asin":"B0UAE00010","title":"USB personal blender","brand":"BlendGo","product_type":"ELECTRONICS","weight_kg":0.7,"variation_count":6,"price_aed":99.0,"sales_rank":3300,"offer_count":14,"amazon_retail_present":true,"source":"mock_sp_api"}]}
+  ]
+}
