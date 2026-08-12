@@ -1,0 +1,48 @@
+{
+  "fee_rule_version": "amazon-ae-v1.3-2025-08-01",
+  "retrieved_at": "2026-08-12T04:05:00Z",
+  "effective_date": "2025-08-01",
+  "currency": "AED",
+  "marketplace": "amazon.ae",
+  "sources": {
+    "pricing": "https://sell.amazon.ae/pricing?pageName=SA%3ASD%3ASOA-home",
+    "calculator_guidance": "https://sell.amazon.ae/selling-online-blog/amazon-fba-revenue-calculator",
+    "fba_guidance": "https://sell.amazon.ae/fulfillment-by-amazon?mons_sel_locale=en_GB",
+    "amazon_vat_guidance": "https://sellercentral.amazon.ae/seller-forums/discussions/t/a53955c7f0bca48d728dccee4eb5a881",
+    "customs": "https://u.ae/en/information-and-services/finance-and-investment/clearing-the-customs-and-paying-customs-duty",
+    "import_vat": "https://tax.gov.ae/DataFolder/Files/Pdf/E-Commerce%20-%20VAT%20Guide%20-%20EN%20-%2009%2008%202020.pdf"
+  },
+  "conditions": {
+    "fees_exclude_vat": true,
+    "fee_vat_rate": 0.05,
+    "storage_aed_per_cubic_foot_month": 2.0,
+    "referral_minimum_default_aed": 1.0,
+    "customs_duty_rate_general": 0.05,
+    "import_vat_rate": 0.05,
+    "expired_promotions_excluded": true
+  },
+  "referral_fees": {
+    "HOME": {"rate": 0.15, "minimum_aed": 1.0},
+    "KITCHEN": {"rate": 0.15, "minimum_aed": 1.0},
+    "SPORTS": {"rate": 0.14, "minimum_aed": 1.0},
+    "OFFICE_PRODUCTS": {"rate": 0.14, "minimum_aed": 1.0},
+    "TOOLS_HOME_IMPROVEMENT": {"rate": 0.15, "minimum_aed": 1.0},
+    "PET_PRODUCTS": {"rate_below_or_equal_50": 0.08, "rate_above_50": 0.15, "minimum_aed": 0.0},
+    "AUTOMOTIVE": {"rate": 0.12, "minimum_aed": 1.0},
+    "LUGGAGE": {"rate": 0.15, "minimum_aed": 1.0},
+    "OUTDOOR": {"rate": 0.15, "minimum_aed": 1.0},
+    "ALL_OTHER": {"rate": 0.10, "minimum_aed": 1.0}
+  },
+  "fba_fulfillment_above_25_aed": {
+    "SMALL_ENVELOPE": [[0.1, 7.5]],
+    "STANDARD_ENVELOPE": [[0.1, 8.0], [0.2, 8.2], [0.5, 8.5]],
+    "LARGE_ENVELOPE": [[1.0, 7.5]],
+    "STANDARD_PARCEL": [[0.25, 9.2], [0.5, 9.5], [1.0, 10.5], [1.5, 11.0], [2.0, 11.5], [3.0, 12.5], [4.0, 13.5], [5.0, 14.5], [6.0, 15.5], [7.0, 16.5], [8.0, 17.5], [9.0, 18.5], [10.0, 19.5], [11.0, 20.5], [12.0, 21.5]],
+    "OVERSIZE": [[1.0, 12.5], [2.0, 13.5], [3.0, 14.5], [4.0, 15.5], [5.0, 16.5], [6.0, 17.5], [7.0, 18.5], [8.0, 19.5], [9.0, 20.5], [10.0, 21.5], [15.0, 26.5], [20.0, 31.5], [25.0, 36.5], [30.0, 41.5]]
+  },
+  "scenario_assumptions": {
+    "OPTIMISTIC": {"advertising_rate": 0.05, "returns_rate": 0.02, "storage_months": 0.5, "international_freight_aed": 4.0, "inbound_to_amazon_aed": 2.0, "inspection_prep_aed": 2.0, "local_clearance_delivery_aed": 2.0, "other_operating_reserve_aed": 1.0},
+    "BASE": {"advertising_rate": 0.10, "returns_rate": 0.05, "storage_months": 1.0, "international_freight_aed": 8.0, "inbound_to_amazon_aed": 3.0, "inspection_prep_aed": 3.0, "local_clearance_delivery_aed": 4.0, "other_operating_reserve_aed": 2.0},
+    "CONSERVATIVE": {"advertising_rate": 0.15, "returns_rate": 0.10, "storage_months": 2.0, "international_freight_aed": 15.0, "inbound_to_amazon_aed": 5.0, "inspection_prep_aed": 5.0, "local_clearance_delivery_aed": 7.0, "other_operating_reserve_aed": 4.0}
+  }
+}

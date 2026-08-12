@@ -21,11 +21,19 @@ from .base import PaidProviderBudget, ResearchSource
 AMAZON_DOMAIN = "amazon.ae"
 MARKETPLACE_ID = "A2VIGQ35RCS4UG"
 ENDPOINT = "https://serpapi.com/search.json"
-RELEVANCE_STATUSES = {"EXACT_TARGET", "CLOSE_VARIANT", "ACCESSORY", "WRONG_PRODUCT", "AMBIGUOUS"}
-TOKEN_ALIASES = {"mats":"mat","cubes":"cube","organizers":"organizer","organisers":"organizer","desks":"desk","feeding":"feed","packing":"pack"}
+RELEVANCE_STATUSES = {"TARGET_PRODUCT", "TARGET_IS_ACCESSORY", "ACCESSORY_TO_TARGET", "WRONG_PRODUCT", "AMBIGUOUS"}
+TOKEN_ALIASES = {"mats":"mat","cubes":"cube","organizers":"organizer","organisers":"organizer","desks":"desk","feeding":"feed","packing":"pack","clips":"clip","straps":"strap","racks":"rack","holders":"holder","stands":"stand","risers":"riser","hooks":"hook"}
 GENERIC_TOKENS = {"premium","large","small","xl","xxl","set","sets","for","and","with","the","of","in","non","slip","waterproof"}
-ACCESSORY_TERMS = {"replacement","refill","cover only","case only","strap","clip","holder","stand","rack","bowl only","bag only","pump","cable"}
+ACCESSORY_CONCEPTS = {"holder", "strap", "clip", "stand", "riser", "rack", "mount", "sling", "hook", "hammock"}
+ACCESSORY_TO_TARGET_TERMS = {"replacement", "refill", "spare part", "replacement part", "cover only", "case only", "rubber feet", "rubber foot", "carabiner only", "screw only", "clamp only", "pad only"}
 PRODUCT_ANCHORS = (({"mat","pad"},{"mat","pad"}),({"cube","organizer"},{"cube","organizer"}),({"tray"},{"tray"}),({"bottle"},{"bottle"}),({"brush"},{"brush"}))
+TARGET_ANCHOR_GROUPS = (
+    ({"laptop", "riser"}, {"riser", "stand"}),
+    ({"ankle", "strap"}, {"ankle", "strap"}),
+    ({"luggage", "cup"}, {"holder", "sling"}),
+    ({"towel", "clip"}, {"clip"}),
+    ({"drying", "rack"}, {"rack"}),
+)
 
 
 def _tokens(value: str) -> set[str]:
@@ -34,21 +42,27 @@ def _tokens(value: str) -> set[str]:
 
 def classify_relevance(result: dict[str, Any], niche: str, keyword: str) -> dict[str, Any]:
     title=str(result.get("title") or ""); title_tokens=_tokens(title); requested=_tokens(f"{niche} {keyword}")-GENERIC_TOKENS
-    anchors=set()
+    target_accessory_concepts=sorted(requested & ACCESSORY_CONCEPTS)
+    anchors=set(); quality=None
+    for triggers,values in TARGET_ANCHOR_GROUPS:
+        if triggers <= requested: anchors |= values
     for triggers,values in PRODUCT_ANCHORS:
-        if requested & triggers: anchors |= values
+        if not anchors and requested & triggers: anchors |= values
     if not anchors and requested: anchors={max(requested,key=len)}
     matched=sorted(requested & title_tokens); missing=sorted(requested-title_tokens); anchor_match=bool(anchors & title_tokens)
-    accessory_hits=sorted(term for term in ACCESSORY_TERMS if term in title.lower())
-    if accessory_hits: status="ACCESSORY"; reason=f"explicit accessory/replacement terms: {', '.join(accessory_hits)}"
-    elif not title or not result.get("asin"): status="AMBIGUOUS"; reason="missing title or ASIN"
+    accessory_hits=sorted(term for term in ACCESSORY_TO_TARGET_TERMS if term in title.lower())
+    if not title or not result.get("asin"): status="AMBIGUOUS"; quality=None; reason="missing title or ASIN"
+    elif accessory_hits: status="ACCESSORY_TO_TARGET"; quality=None; reason=f"explicit replacement/subcomponent sold for the target: {', '.join(accessory_hits)}"
     elif not anchor_match: status="WRONG_PRODUCT"; reason=f"missing product-type anchor: {', '.join(sorted(anchors)) or 'unknown'}"
     else:
         coverage=len(matched)/max(1,len(requested)); modifiers=requested-anchors; modifier_coverage=len(modifiers & title_tokens)/max(1,len(modifiers))
-        if coverage >= .75 or modifier_coverage >= .75: status="EXACT_TARGET"; reason="target product anchor and primary niche modifiers matched"
-        elif coverage >= .4 or modifier_coverage >= .4: status="CLOSE_VARIANT"; reason="target product anchor matched with partial size/material/use-case modifiers"
-        else: status="AMBIGUOUS"; reason="product anchor matched but niche modifier coverage was insufficient"
-    return {"relevance_status":status,"relevance_reason":reason,"requested_tokens":sorted(requested),"matched_tokens":matched,"missing_tokens":missing,"product_anchor_tokens":sorted(anchors),"accessory_terms":accessory_hits,"rule_version":"v1.2.1"}
+        quality="EXACT_TARGET" if coverage >= .75 or modifier_coverage >= .75 else "CLOSE_VARIANT" if coverage >= .4 or modifier_coverage >= .4 else None
+        if quality is None: status="AMBIGUOUS"; reason="product anchor matched but niche modifier coverage was insufficient"
+        elif target_accessory_concepts: status="TARGET_IS_ACCESSORY"; reason=f"target product anchors matched; accessory concept is part of target definition: {', '.join(target_accessory_concepts)}"
+        else: status="TARGET_PRODUCT"; reason="target product anchor and sufficient niche modifiers matched"
+    if status in {"WRONG_PRODUCT", "ACCESSORY_TO_TARGET", "AMBIGUOUS"}: quality=None
+    legacy_status = quality if status in {"TARGET_PRODUCT", "TARGET_IS_ACCESSORY"} else "ACCESSORY" if status == "ACCESSORY_TO_TARGET" else status
+    return {"relevance_status":legacy_status,"target_relationship":status,"target_match_quality":quality,"relevance_reason":reason,"requested_tokens":sorted(requested),"matched_tokens":matched,"missing_tokens":missing,"product_anchor_tokens":sorted(anchors),"target_accessory_concepts":target_accessory_concepts,"accessory_to_target_terms":accessory_hits,"rule_version":"v1.2.4"}
 
 
 def request_fingerprint(params: dict[str, Any]) -> str:
@@ -204,18 +218,18 @@ def normalize_search_response(payload: dict[str, Any], *, niche: str, keyword: s
         classification=classify_relevance(result,niche,keyword)
         if relevant:
             ok,reason=relevant(result)
-            if not ok and classification["relevance_status"] in {"EXACT_TARGET","CLOSE_VARIANT"}:
-                classification.update({"relevance_status":"WRONG_PRODUCT","relevance_reason":reason or "caller deterministic exclusion"})
-        segment=classify_commercial_segment(result,target_profile) if classification["relevance_status"] in {"EXACT_TARGET","CLOSE_VARIANT"} else {}
+            if not ok and classification["target_relationship"] in {"TARGET_PRODUCT","TARGET_IS_ACCESSORY"}:
+                classification.update({"relevance_status":"WRONG_PRODUCT","target_relationship":"WRONG_PRODUCT","target_match_quality":None,"relevance_reason":reason or "caller deterministic exclusion"})
+        segment=classify_commercial_segment(result,target_profile) if classification["target_relationship"] in {"TARGET_PRODUCT","TARGET_IS_ACCESSORY"} else {}
         enriched={**result,**classification,**segment}; classified.append(enriched)
-        if classification["relevance_status"] in {"EXACT_TARGET","CLOSE_VARIANT"}: considered.append(enriched)
+        if classification["target_relationship"] in {"TARGET_PRODUCT","TARGET_IS_ACCESSORY"}: considered.append(enriched)
         else: excluded.append({"asin":result.get("asin"),"title":result.get("title"),"relevance_status":classification["relevance_status"],"reason":classification["relevance_reason"],"normalized_fields":classification})
     products=[]; evidence=[]
     for index,result in enumerate(considered):
         asin=result.get("asin"); prefix=f"serpapi-{request_fingerprint({'run':run_id,'keyword':keyword,'asin':asin,'index':index})[:20]}"
-        product={key:result.get(key) for key in ("asin","title","brand","rating","reviews","sponsored","position","prime","stock","badges","options","variants","bought_last_month","link_clean","relevance_status","relevance_reason","requested_tokens","matched_tokens","missing_tokens","product_anchor_tokens","accessory_terms","rule_version","pack_count","size_class","dimensions","positioning","material","major_feature_set","product_subtype","brand_tier","bundle_configuration","desk_sized","commercial_segment_status","commercial_segment_reasons","commercial_segment_rule_version")}
+        product={key:result.get(key) for key in ("asin","title","brand","rating","reviews","sponsored","position","prime","stock","badges","options","variants","bought_last_month","link_clean","relevance_status","target_relationship","target_match_quality","relevance_reason","requested_tokens","matched_tokens","missing_tokens","product_anchor_tokens","target_accessory_concepts","accessory_to_target_terms","rule_version","pack_count","size_class","dimensions","positioning","material","major_feature_set","product_subtype","brand_tier","bundle_configuration","desk_sized","commercial_segment_status","commercial_segment_reasons","commercial_segment_rule_version")}
         current_price=_aed_price(result)
-        product.update({"niche":niche,"marketplace":"amazon.ae","current_price_aed":current_price,"original_price_aed":result.get("extracted_old_price") if current_price is not None else None,"target_commercial_profile":target_profile.to_dict()})
+        product.update({"niche":niche,"marketplace":"amazon.ae","current_price_aed":current_price,"original_price_aed":result.get("extracted_old_price") if current_price is not None else None,"target_commercial_profile":target_profile.to_dict(),"observed_at":retrieved_at,"retrieved_at":retrieved_at})
         products.append(product)
         metrics=(("current_price_aed",current_price,"AED"),("rating",result.get("rating"),"stars"),("review_count",result.get("reviews"),"reviews"),("sponsored_status",result.get("sponsored"),None),("search_position",result.get("position"),"position"),("brand",result.get("brand"),None),("asin",asin,None),("amazon_visibility",1,"visible_result"))
         raw_bought,lower,is_exact=parse_bought_last_month(result.get("bought_last_month"))
@@ -231,19 +245,20 @@ def normalize_search_response(payload: dict[str, Any], *, niche: str, keyword: s
     non_comparable=[p for p in products if p.get("commercial_segment_status")=="NON_COMPARABLE"]
     unknown_segment=[p for p in products if p.get("commercial_segment_status")=="UNKNOWN"]
     comparable_prices=[float(p["current_price_aed"]) for p in comparable if isinstance(p.get("current_price_aed"),(int,float))]
-    exact_prices=[float(p["current_price_aed"]) for p in products if p.get("relevance_status")=="EXACT_TARGET" and isinstance(p.get("current_price_aed"),(int,float))]
-    close_prices=[float(p["current_price_aed"]) for p in products if p.get("relevance_status")=="CLOSE_VARIANT" and isinstance(p.get("current_price_aed"),(int,float))]
+    exact_prices=[float(p["current_price_aed"]) for p in products if p.get("target_match_quality")=="EXACT_TARGET" and isinstance(p.get("current_price_aed"),(int,float))]
+    close_prices=[float(p["current_price_aed"]) for p in products if p.get("target_match_quality")=="CLOSE_VARIANT" and isinstance(p.get("current_price_aed"),(int,float))]
     reviews=[float(p["reviews"]) for p in products if isinstance(p.get("reviews"),(int,float))]
     ratings=[float(p["rating"]) for p in products if isinstance(p.get("rating"),(int,float))]
     brands=[str(p["brand"]).strip() for p in products if p.get("brand")]; sponsored=[bool(p["sponsored"]) for p in products if p.get("sponsored") is not None]
     in_band=sum(price_min_aed <= price <= price_max_aed for price in prices)
     sponsored_complete=bool(products) and len(sponsored)==len(products)
-    counts=Counter(x["relevance_status"] for x in classified)
+    counts=Counter(x["target_relationship"] for x in classified)
     comparable_in_band=sum(price_min_aed <= price <= price_max_aed for price in comparable_prices)
-    aggregates={"total_results_received":len(classified),"total_serpapi_results":len(classified),"exact_results":counts["EXACT_TARGET"],"close_variants":counts["CLOSE_VARIANT"],"excluded_accessories":counts["ACCESSORY"],"excluded_wrong_products":counts["WRONG_PRODUCT"],"ambiguous_results":counts["AMBIGUOUS"],"results_considered_relevant":len(products),"results_excluded":len(excluded),"exclusion_reasons":dict(Counter(x["reason"] for x in excluded)),"exact_target_price_sample":exact_prices,"close_variant_price_sample":close_prices,"combined_validated_price_sample":prices,"amazon_uae_price_sample_size":len(prices),"price_min_aed":min(prices) if prices else None,"price_p25_aed":_percentile(prices,.25),"price_median_aed":median(prices) if prices else None,"price_mean_aed":round(sum(prices)/len(prices),2) if prices else None,"price_p75_aed":_percentile(prices,.75),"price_max_aed":max(prices) if prices else None,"price_dispersion":round((max(prices)-min(prices))/median(prices),3) if prices and median(prices) else None,"in_target_price_band_count":in_band,"in_target_price_band_ratio":in_band/len(prices) if prices else None,"relevant_result_count":len(products),"unique_asin_count":len({p['asin'] for p in products if p.get('asin')}),"unique_brand_count":len(set(brands)),"top_brand_share":max(Counter(brands).values())/len(brands) if brands else None,"brand_concentration":sum((c/len(brands))**2 for c in Counter(brands).values()) if brands else None,"sponsored_sample_size":len(sponsored),"sponsored_count":sum(sponsored) if sponsored else None,"sponsored_density":sum(sponsored)/len(sponsored) if sponsored_complete else None,"rating_sample_size":len(ratings),"median_rating":median(ratings) if ratings else None,"review_sample_size":len(reviews),"median_reviews":median(reviews) if reviews else None,"p75_reviews":_percentile(reviews,.75),"p90_reviews":_percentile(reviews,.90),"target_commercial_profile":target_profile.to_dict(),"comparable_results":len(comparable),"adjacent_results":len(adjacent),"non_comparable_results":len(non_comparable),"unknown_segment_results":len(unknown_segment),"comparable_sample_size":len(comparable_prices),"comparable_price_min_aed":min(comparable_prices) if comparable_prices else None,"comparable_price_p25_aed":_percentile(comparable_prices,.25),"comparable_price_median_aed":median(comparable_prices) if comparable_prices else None,"comparable_price_mean_aed":round(sum(comparable_prices)/len(comparable_prices),2) if comparable_prices else None,"comparable_price_p75_aed":_percentile(comparable_prices,.75),"comparable_price_max_aed":max(comparable_prices) if comparable_prices else None,"comparable_in_target_band_count":comparable_in_band,"comparable_in_target_band_ratio":comparable_in_band/len(comparable_prices) if comparable_prices else None}
+    quality_counts=Counter(x.get("target_match_quality") for x in classified)
+    aggregates={"total_results_received":len(classified),"total_serpapi_results":len(classified),"target_product_results":counts["TARGET_PRODUCT"],"target_is_accessory_results":counts["TARGET_IS_ACCESSORY"],"exact_results":quality_counts["EXACT_TARGET"],"close_variants":quality_counts["CLOSE_VARIANT"],"accessory_to_target_exclusions":counts["ACCESSORY_TO_TARGET"],"excluded_accessories":counts["ACCESSORY_TO_TARGET"],"excluded_wrong_products":counts["WRONG_PRODUCT"],"ambiguous_results":counts["AMBIGUOUS"],"results_considered_relevant":len(products),"results_excluded":len(excluded),"exclusion_reasons":dict(Counter(x["reason"] for x in excluded)),"exact_target_price_sample":exact_prices,"close_variant_price_sample":close_prices,"combined_validated_price_sample":prices,"amazon_uae_price_sample_size":len(prices),"price_min_aed":min(prices) if prices else None,"price_p25_aed":_percentile(prices,.25),"price_median_aed":median(prices) if prices else None,"price_mean_aed":round(sum(prices)/len(prices),2) if prices else None,"price_p75_aed":_percentile(prices,.75),"price_max_aed":max(prices) if prices else None,"price_dispersion":round((max(prices)-min(prices))/median(prices),3) if prices and median(prices) else None,"in_target_price_band_count":in_band,"in_target_price_band_ratio":in_band/len(prices) if prices else None,"relevant_result_count":len(products),"unique_asin_count":len({p['asin'] for p in products if p.get('asin')}),"unique_brand_count":len(set(brands)),"top_brand_share":max(Counter(brands).values())/len(brands) if brands else None,"brand_concentration":sum((c/len(brands))**2 for c in Counter(brands).values()) if brands else None,"sponsored_sample_size":len(sponsored),"sponsored_count":sum(sponsored) if sponsored else None,"sponsored_density":sum(sponsored)/len(sponsored) if sponsored_complete else None,"rating_sample_size":len(ratings),"median_rating":median(ratings) if ratings else None,"review_sample_size":len(reviews),"median_reviews":median(reviews) if reviews else None,"p75_reviews":_percentile(reviews,.75),"p90_reviews":_percentile(reviews,.90),"target_commercial_profile":target_profile.to_dict(),"comparable_results":len(comparable),"adjacent_results":len(adjacent),"non_comparable_results":len(non_comparable),"unknown_segment_results":len(unknown_segment),"comparable_sample_size":len(comparable_prices),"comparable_price_min_aed":min(comparable_prices) if comparable_prices else None,"comparable_price_p25_aed":_percentile(comparable_prices,.25),"comparable_price_median_aed":median(comparable_prices) if comparable_prices else None,"comparable_price_mean_aed":round(sum(comparable_prices)/len(comparable_prices),2) if comparable_prices else None,"comparable_price_p75_aed":_percentile(comparable_prices,.75),"comparable_price_max_aed":max(comparable_prices) if comparable_prices else None,"comparable_in_target_band_count":comparable_in_band,"comparable_in_target_band_ratio":comparable_in_band/len(comparable_prices) if comparable_prices else None}
     for metric in ("relevant_result_count","brand_concentration","top_brand_share","sponsored_density","median_rating","median_reviews","p75_reviews"):
         if aggregates.get(metric) is not None: evidence.append(_evidence(f"serpapi-{request_fingerprint({'run':run_id,'keyword':keyword,'metric':metric})[:20]}",metric,aggregates[metric],None,None,keyword,niche,retrieved_at,True,"Derived from the current relevant SerpApi Amazon.ae result sample."))
-    for metric in ("total_serpapi_results","exact_results","close_variants","excluded_accessories","excluded_wrong_products","ambiguous_results"):
+    for metric in ("total_serpapi_results","target_product_results","target_is_accessory_results","exact_results","close_variants","accessory_to_target_exclusions","excluded_accessories","excluded_wrong_products","ambiguous_results"):
         evidence.append(_evidence(f"serpapi-{request_fingerprint({'run':run_id,'keyword':keyword,'metric':metric})[:20]}",metric,aggregates[metric],"results",None,keyword,niche,retrieved_at,True,"Deterministic V1.2.1 relevance classification aggregate."))
     return {"products":products,"all_classified_results":classified,"evidence":evidence,"aggregates":aggregates,"excluded_results":excluded,"serpapi_keyword":keyword,"target_commercial_profile":target_profile.to_dict()}
 

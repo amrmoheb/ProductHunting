@@ -23,6 +23,7 @@ class EvidenceStrength(str, Enum):
 
 class EvidenceFreshness(str, Enum):
     CURRENT = "CURRENT"
+    STATIC_GUIDANCE = "STATIC_GUIDANCE"
     AGING = "AGING"
     STALE = "STALE"
     UNKNOWN = "UNKNOWN"
@@ -122,6 +123,8 @@ def load_freshness_config(path: str | Path = "config/evidence_freshness.yaml") -
 def freshness_for(record: EvidenceRecord, as_of: datetime, config: dict[str, Any] | None = None) -> EvidenceFreshness:
     config = config or load_freshness_config()
     metric = record.metric_name
+    if metric in {"regulatory_risk", "risk_score"} and record.source_type == "official_government_web":
+        return EvidenceFreshness.STATIC_GUIDANCE
     if metric in {"current_price_aed", "observed_market_price_aed"}: group = "retail_price"
     elif metric in {"bestseller_rank", "search_position", "bestseller_badge"}: group = "amazon_rank"
     elif "fee" in metric: group = "official_fee"

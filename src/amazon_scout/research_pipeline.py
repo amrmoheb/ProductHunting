@@ -15,7 +15,8 @@ from .database import ScoutDatabase
 from .evidence import EvidenceFreshness, EvidenceRecord, EvidenceStrength, MarketRelevance, freshness_for, load_freshness_config, parse_aware_datetime
 from .normalization import clamp, minmax, percentile, price_statistics
 from .profitability import maximum_landed_cost, uncertain_fee_scenarios
-from .scoring import load_scoring_config, opportunity_score
+from .scoring import load_scoring_config, opportunity_score, opportunity_score_breakdown
+from .economics_v13 import calculate_candidate_economics
 from .sources.provenance import choose_preferred
 
 STRENGTH = {EvidenceStrength.VERY_HIGH: 1.0, EvidenceStrength.HIGH: .85, EvidenceStrength.MEDIUM: .65, EvidenceStrength.LOW: .4, EvidenceStrength.VERY_LOW: .2}
@@ -23,10 +24,40 @@ DEMAND_METRICS = {"amazon_search_volume", "search_position", "bestseller_rank", 
 COMPETITION_METRICS = {"visible_competing_products", "relevant_result_count", "offer_count", "seller_count", "sponsored_status", "sponsored_density", "search_position", "review_count", "median_reviews", "p75_reviews", "rating", "brand", "brand_concentration", "top_brand_share", "variation_count", "competitor_keyword_overlap", "search_result_density"}
 RISK_METRICS = {"regulatory_risk", "risk_score", "fragile", "battery", "hazardous", "weight_kg"}
 CANDIDATE_TYPES = {"OBSERVED_MARKET_OPPORTUNITY", "BUNDLE_HYPOTHESIS", "DIFFERENTIATION_HYPOTHESIS"}
+STATISTICAL_METRICS = COMPETITION_METRICS | {"current_price_aed", "observed_market_price_aed"}
 
 
 def _numeric(records: list[EvidenceRecord], name: str) -> list[float]:
     return [float(r.metric_value) for r in records if r.metric_name == name and isinstance(r.metric_value, (int, float)) and not isinstance(r.metric_value, bool)]
+
+
+def canonical_products_by_asin(products: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Keep raw rows elsewhere, but return one merged current row per candidate+ASIN."""
+    by_asin: dict[str, list[dict[str, Any]]] = defaultdict(list); without_asin=[]
+    for product in products:
+        asin=str(product.get("asin") or "").strip()
+        (by_asin[asin] if asin else without_asin).append(product)
+    canonical=[]
+    for asin, rows in by_asin.items():
+        ordered=sorted(rows,key=lambda row:str(row.get("retrieved_at") or row.get("observed_at") or ""),reverse=True)
+        merged=dict(ordered[0])
+        for row in ordered[1:]:
+            for key,value in row.items():
+                if merged.get(key) is None and value is not None: merged[key]=value
+        canonical.append(merged)
+    canonical.extend(without_asin)
+    raw_rows=len(products); unique=len(by_asin)
+    return canonical,{"raw_result_rows":raw_rows,"unique_ASINs":unique,"duplicate_ASIN_rows_removed_from_statistics":raw_rows-unique-len(without_asin)}
+
+
+def canonical_statistical_records(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
+    chosen: dict[tuple[str,str],EvidenceRecord]={}; passthrough=[]
+    for record in records:
+        if not record.asin or record.metric_name not in STATISTICAL_METRICS:
+            passthrough.append(record); continue
+        key=(record.asin,record.metric_name); current=chosen.get(key)
+        if current is None or (record.observed_at,record.retrieved_at,record.id) > (current.observed_at,current.retrieved_at,current.id): chosen[key]=record
+    return passthrough+list(chosen.values())
 
 
 def _effective_relevance(record: EvidenceRecord) -> MarketRelevance:
@@ -51,7 +82,7 @@ def _fresh(record: EvidenceRecord, as_of: datetime, config: dict[str, Any]) -> E
 
 def _component_freshness(records: list[EvidenceRecord], as_of: datetime, config: dict[str, Any]) -> str:
     states = [_fresh(r, as_of, config) for r in records]
-    for state in (EvidenceFreshness.CURRENT, EvidenceFreshness.AGING, EvidenceFreshness.STALE):
+    for state in (EvidenceFreshness.CURRENT, EvidenceFreshness.STATIC_GUIDANCE, EvidenceFreshness.AGING, EvidenceFreshness.STALE):
         if state in states: return state.value
     return EvidenceFreshness.UNKNOWN.value
 
@@ -222,7 +253,7 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
     results: list[dict[str, Any]] = []
     filters = raw["research_run"].get("filters", {}); minimum = filters.get("price_min_aed"); maximum = filters.get("price_max_aed")
     for niche in sorted(set(by_niche) | set(products_by_niche)):
-        evidence = by_niche[niche]; products = products_by_niche[niche]; product = products[0] if products else {}
+        evidence = by_niche[niche]; raw_products = products_by_niche[niche]; products, asin_audit = canonical_products_by_asin(raw_products); product = products[0] if products else {}
         candidate_type = _candidate_type(product)
         has_segment_data = any(p.get("commercial_segment_status") for p in products)
         comparable_products = [p for p in products if p.get("commercial_segment_status") == "COMPARABLE"] if has_segment_data else products
@@ -230,7 +261,8 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         # Per-ASIN SerpApi evidence must follow the persisted commercial classification.
         # Old/non-SerpApi evidence remains loadable without inventing a segment.
         segment_evidence = [r for r in evidence if r.source_provider != "serpapi" or (r.asin is not None and r.asin in comparable_asins)] if has_segment_data else evidence
-        price_records = [r for r in evidence if r.metric_name in {"current_price_aed", "observed_market_price_aed"} and isinstance(r.metric_value, (int, float))]
+        statistical_segment_evidence = canonical_statistical_records(segment_evidence)
+        price_records = [r for r in canonical_statistical_records(evidence) if r.metric_name in {"current_price_aed", "observed_market_price_aed"} and isinstance(r.metric_value, (int, float))]
         amazon_price_records = [r for r in price_records if _effective_relevance(r) == MarketRelevance.AMAZON_UAE]
         comparable_amazon_price_records = [r for r in amazon_price_records if not has_segment_data or (r.asin is not None and r.asin in comparable_asins)]
         current_amazon_price_records = [r for r in amazon_price_records if _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT]
@@ -257,11 +289,13 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         elif external_prices: price_reason = "Only external UAE retail prices are available; they are context and cannot satisfy the Amazon UAE price gate."
         else: price_reason = "No current credible Amazon UAE price observation is available."
         demand = _demand_component(segment_evidence, generated_at, fresh_cfg)
-        competition = _competition_component(segment_evidence, comparable_products, comparable_current_prices, generated_at, fresh_cfg)
+        competition = _competition_component(statistical_segment_evidence, comparable_products, comparable_current_prices, generated_at, fresh_cfg)
         risk = _risk_component(evidence, generated_at, fresh_cfg)
         fee_records = [r for r in evidence if r.metric_name in {"estimated_referral_fee_aed", "total_estimated_amazon_fees_aed"} and isinstance(r.metric_value, (int, float))]
         preferred_fee = choose_preferred(fee_records); known_fee = float(preferred_fee.metric_value) if preferred_fee else None
-        margin_score = round(clamp(100 - known_fee / fee_basis * 180), 2) if known_fee is not None and fee_basis else None
+        economics = calculate_candidate_economics(niche, fee_basis)
+        economics_raw = economics.get("score", {}).get("raw")
+        margin_score = economics_raw if economics_raw is not None else (round(clamp(100 - known_fee / fee_basis * 180), 2) if known_fee is not None and fee_basis else None)
         price_score = minmax(fee_basis, 40, 200, missing=0) if fee_basis is not None else None
         brands = {str(r.metric_value).lower() for r in evidence if r.metric_name == "brand" and r.metric_value}
         differentiation = round(min(85, 30 + len(brands) * 5 + len({r.keyword for r in evidence if r.keyword}) * 3), 2) if evidence else None
@@ -272,6 +306,8 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         validated = preliminary if required_pass else None
         component_confidences = [demand["confidence"], competition["confidence"], risk["confidence"], 80.0 if price_gate else 0.0]
         overall_confidence = round(sum(component_confidences) / len(component_confidences), 2)
+        score_breakdown = opportunity_score_breakdown(factors, scoring["weights"], confidence=overall_confidence) if preliminary is not None else None
+        if score_breakdown is not None: score_breakdown["final_validated_opportunity_score"] = validated
         confidence_gate = overall_confidence >= scoring["research_gates"]["top_3_minimum_confidence"]
         gates["confidence"] = {"gate": confidence_gate, "reason": "Overall data confidence meets the 60% sourcing threshold." if confidence_gate else f"Overall data confidence {overall_confidence}% is below the required 60%."}
         premium_prices = [float(p["current_price_aed"]) for p in products if p.get("positioning") == "PREMIUM" and isinstance(p.get("current_price_aed"),(int,float)) and (minimum is None or float(p["current_price_aed"]) >= minimum) and (maximum is None or float(p["current_price_aed"]) <= maximum)]
@@ -292,13 +328,19 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         }
         current_stats = price_statistics(current_amazon_prices); comparable_stats = price_statistics(comparable_current_prices)
         representative_asins = list(dict.fromkeys(str(p.get("asin")) for p in comparable_products if p.get("asin")))
+        priced_comparables = [p for p in comparable_products if p.get("asin") and isinstance(p.get("current_price_aed"),(int,float))]
+        if fee_basis and priced_comparables:
+            representative = min(priced_comparables, key=lambda p: abs(float(p["current_price_aed"])-float(fee_basis)))
+            economics["representative_asin"] = representative["asin"]
+            economics["representative_price_aed"] = float(representative["current_price_aed"])
+            economics["representative_selection_reason"] = "Comparable ASIN with current price closest to the comparable-segment median; no unrelated premium/cheap variant was substituted."
         serpapi_keywords = list(dict.fromkeys(str(r.keyword) for r in evidence if r.source_provider == "serpapi" and r.keyword))
-        ratings = _numeric([r for r in segment_evidence if r.source_provider == "serpapi" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT], "rating")
-        reviews = _numeric([r for r in segment_evidence if r.source_provider == "serpapi" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT], "review_count")
-        sponsored_values = [bool(r.metric_value) for r in segment_evidence if r.source_provider == "serpapi" and r.metric_name == "sponsored_status" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT]
+        ratings = _numeric([r for r in statistical_segment_evidence if r.source_provider == "serpapi" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT], "rating")
+        reviews = _numeric([r for r in statistical_segment_evidence if r.source_provider == "serpapi" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT], "review_count")
+        sponsored_values = [bool(r.metric_value) for r in statistical_segment_evidence if r.source_provider == "serpapi" and r.metric_name == "sponsored_status" and _fresh(r, generated_at, fresh_cfg) == EvidenceFreshness.CURRENT]
         sponsored_complete = bool(representative_asins) and len(sponsored_values) >= len({p.get('asin') for p in comparable_products if p.get('asin')})
-        exact_prices=[float(p["current_price_aed"]) for p in products if p.get("relevance_status")=="EXACT_TARGET" and isinstance(p.get("current_price_aed"),(int,float))]
-        close_prices=[float(p["current_price_aed"]) for p in products if p.get("relevance_status")=="CLOSE_VARIANT" and isinstance(p.get("current_price_aed"),(int,float))]
+        exact_prices=[float(p["current_price_aed"]) for p in products if p.get("target_match_quality")=="EXACT_TARGET" and isinstance(p.get("current_price_aed"),(int,float))]
+        close_prices=[float(p["current_price_aed"]) for p in products if p.get("target_match_quality")=="CLOSE_VARIANT" and isinstance(p.get("current_price_aed"),(int,float))]
         scenarios = uncertain_fee_scenarios(float(fee_basis), known_fee, (8,14,22)) if fee_basis and known_fee is not None else None
         results.append({
             "niche": niche, "products": products, "evidence": evidence, "candidate_type": candidate_type, "commercial_opportunity_classification": commercial_classification,
@@ -308,15 +350,15 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
             "fee_calculation_price_aed": fee_basis, "known_fee_aed": known_fee, "fee_category_assumption": preferred_fee.notes if preferred_fee else None,
             "fee_source": preferred_fee.source_url if preferred_fee else None, "fee_observed_at": preferred_fee.observed_at if preferred_fee else None,
             "fee_status": "estimated" if preferred_fee and preferred_fee.is_estimate else "observed" if preferred_fee else "unknown",
-            "known_fee_components": ["referral fee"] if known_fee is not None else [], "unknown_fee_components": ["FBA fulfillment fee", "fee VAT", "storage/advertising/returns"], "fee_scenarios": scenarios,
+            "known_fee_components": ["referral fee"] if known_fee is not None else [], "unknown_fee_components": ["actual supplier cost", "observed packaged dimensions/weight", "verified freight quote"], "fee_scenarios": scenarios, "economics": economics,
             "components": {"demand": demand, "competition": competition, "risk": risk}, "demand_score": demand["score"], "demand_status": demand["status"], "demand_confidence": demand["confidence"],
             "competition_score": competition["score"], "competition_status": competition["status"], "competition_confidence": competition["confidence"],
             "risk_score": risk["score"], "risk_status": risk["status"], "risk_confidence": risk["confidence"], "factors": factors,
-            "preliminary_opportunity_score": preliminary, "validated_opportunity_score": validated, "opportunity_score": preliminary,
+            "preliminary_opportunity_score": preliminary, "validated_opportunity_score": validated, "opportunity_score": preliminary, "score_breakdown": score_breakdown,
             "data_confidence_score": overall_confidence, "recommendation_tier": tier, "technically_validated": technically_validated, "qualified_strong_opportunity": qualified_strong, "gates": gates, "evidence_freshness": aggregate_freshness,
             "component_freshness": component_freshness, "representative_asins": representative_asins[:12], "serpapi_keywords": serpapi_keywords,
-            "relevance_summary": {"total_serpapi_results": int(max(_numeric(evidence,"total_serpapi_results") or [0])), "exact_results": int(max(_numeric(evidence,"exact_results") or [0])), "close_variants": int(max(_numeric(evidence,"close_variants") or [0])), "excluded_accessories": int(max(_numeric(evidence,"excluded_accessories") or [0])), "excluded_wrong_products": int(max(_numeric(evidence,"excluded_wrong_products") or [0])), "ambiguous_results": int(max(_numeric(evidence,"ambiguous_results") or [0])), "exact_target_price_sample": exact_prices, "close_variant_price_sample": close_prices, "combined_validated_price_sample": exact_prices+close_prices},
-            "structured_metrics": {"relevant_result_count": len({p.get('asin') for p in products if p.get('asin')}), "comparable_result_count": len({p.get('asin') for p in comparable_products if p.get('asin')}), "amazon_uae_price_sample_size": len(current_amazon_prices), "current_price_min_aed": min(current_amazon_prices) if current_amazon_prices else None, "current_price_median_aed": current_stats.get("median"), "current_price_max_aed": max(current_amazon_prices) if current_amazon_prices else None, "comparable_sample_size": len(comparable_current_prices), "comparable_price_min_aed": min(comparable_current_prices) if comparable_current_prices else None, "comparable_price_p25_aed": comparable_stats.get("p25"), "comparable_price_median_aed": comparable_stats.get("median"), "comparable_price_mean_aed": comparable_stats.get("mean"), "comparable_price_p75_aed": comparable_stats.get("p75"), "comparable_price_max_aed": max(comparable_current_prices) if comparable_current_prices else None, "comparable_in_target_band_count": comparable_in_band, "comparable_in_target_band_ratio": comparable_ratio if comparable_current_prices else None, "price_gate_minimum_comparable_products": commercial_cfg["minimum_comparable_products"], "price_gate_minimum_in_band_ratio": commercial_cfg["minimum_in_target_band_ratio"], "rating_sample_size": len(ratings), "median_rating": median(ratings) if ratings else None, "review_sample_size": len(reviews), "median_reviews": median(reviews) if reviews else None, "p75_reviews": percentile(reviews,.75) if reviews else None, "sponsored_sample_size": len(sponsored_values), "sponsored_count": sum(sponsored_values) if sponsored_values else None, "sponsored_density": sum(sponsored_values)/len(sponsored_values) if sponsored_complete else None, "unique_brand_count": len({str(r.metric_value).lower() for r in segment_evidence if r.metric_name == 'brand' and r.metric_value}), "top_brand_share": max(Counter(str(r.metric_value).lower() for r in segment_evidence if r.metric_name == 'brand' and r.metric_value).values())/max(1,len([r for r in segment_evidence if r.metric_name == 'brand' and r.metric_value])) if any(r.metric_name == 'brand' and r.metric_value for r in segment_evidence) else None, "bought_last_month_observations": [r.metric_value for r in segment_evidence if r.metric_name == 'bought_last_month_raw']},
+            "relevance_summary": {"total_serpapi_results": int(sum(_numeric(evidence,"total_serpapi_results") or [0])), "target_results": int(sum(_numeric(evidence,"target_product_results") or [0])+sum(_numeric(evidence,"target_is_accessory_results") or [0])), "exact_results": int(sum(_numeric(evidence,"exact_results") or [0])), "close_variants": int(sum(_numeric(evidence,"close_variants") or [0])), "accessory_to_target_exclusions": int(sum(_numeric(evidence,"accessory_to_target_exclusions") or [0])), "excluded_accessories": int(sum(_numeric(evidence,"excluded_accessories") or [0])), "excluded_wrong_products": int(sum(_numeric(evidence,"excluded_wrong_products") or [0])), "ambiguous_results": int(sum(_numeric(evidence,"ambiguous_results") or [0])), "exact_target_price_sample": exact_prices, "close_variant_price_sample": close_prices, "combined_validated_price_sample": exact_prices+close_prices},
+            "structured_metrics": {**asin_audit, "relevant_result_count": len({p.get('asin') for p in products if p.get('asin')}), "comparable_result_count": len({p.get('asin') for p in comparable_products if p.get('asin')}), "amazon_uae_price_sample_size": len(current_amazon_prices), "current_price_min_aed": min(current_amazon_prices) if current_amazon_prices else None, "current_price_median_aed": current_stats.get("median"), "current_price_max_aed": max(current_amazon_prices) if current_amazon_prices else None, "comparable_sample_size": len(comparable_current_prices), "comparable_price_min_aed": min(comparable_current_prices) if comparable_current_prices else None, "comparable_price_p25_aed": comparable_stats.get("p25"), "comparable_price_median_aed": comparable_stats.get("median"), "comparable_price_mean_aed": comparable_stats.get("mean"), "comparable_price_p75_aed": comparable_stats.get("p75"), "comparable_price_max_aed": max(comparable_current_prices) if comparable_current_prices else None, "comparable_in_target_band_count": comparable_in_band, "comparable_in_target_band_ratio": comparable_ratio if comparable_current_prices else None, "price_gate_minimum_comparable_products": commercial_cfg["minimum_comparable_products"], "price_gate_minimum_in_band_ratio": commercial_cfg["minimum_in_target_band_ratio"], "rating_sample_size": len(ratings), "median_rating": median(ratings) if ratings else None, "review_sample_size": len(reviews), "median_reviews": median(reviews) if reviews else None, "p75_reviews": percentile(reviews,.75) if reviews else None, "sponsored_sample_size": len(sponsored_values), "sponsored_count": sum(sponsored_values) if sponsored_values else None, "sponsored_density": sum(sponsored_values)/len(sponsored_values) if sponsored_complete else None, "unique_brand_count": len({str(r.metric_value).lower() for r in statistical_segment_evidence if r.metric_name == 'brand' and r.metric_value}), "top_brand_share": max(Counter(str(r.metric_value).lower() for r in statistical_segment_evidence if r.metric_name == 'brand' and r.metric_value).values())/max(1,len([r for r in statistical_segment_evidence if r.metric_name == 'brand' and r.metric_value])) if any(r.metric_name == 'brand' and r.metric_value for r in statistical_segment_evidence) else None, "bought_last_month_observations": [r.metric_value for r in statistical_segment_evidence if r.metric_name == 'bought_last_month_raw']},
             "final_top_10_eligible": qualified_strong, "top_3_to_source_eligible": qualified_strong and candidate_type == "OBSERVED_MARKET_OPPORTUNITY",
             "remaining_unknowns": [name for name, value in (("Amazon UAE price", observed_market_price), ("fee calculation price", fee_basis), ("demand score", demand["score"]), ("competition score", competition["score"]), ("risk score", risk["score"])) if value is None],
         })
