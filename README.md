@@ -178,6 +178,20 @@ Check without a call, or run the explicit one-call Amazon.ae health test:
 
 The health test searches `drawer organizer`, validates domain and organic-result/ASIN parsing, prints no response or secret, and reports that one search was consumed.
 
+#### V1.2.1 relevance and risk-gap closure
+
+Every SerpApi result is reproducibly classified as `EXACT_TARGET`, `CLOSE_VARIANT`, `ACCESSORY`, `WRONG_PRODUCT`, or `AMBIGUOUS`. The classifier stores requested/matched/missing tokens, product anchors, accessory terms, rule version, and reason. Only exact and close results contribute to price, demand, rating/review, or competition aggregates. Reports show separate exact, close, and combined validated price samples; cheap accessories and unrelated expensive products cannot distort the median.
+
+If price, demand, and competition pass but risk is unknown, the ingest step emits an automatic zero-paid risk-gap plan. Codex then checks MoIAT, Dubai Municipality, UAE government, and Amazon UAE official sources, adds explicit risk evidence, and re-runs deterministic scoring. This uses no SerpApi calls. Failure to find a specific restriction leaves risk UNKNOWN rather than inventing LOW risk.
+
+#### V1.2.2 commercial-segment comparability
+
+Semantic relevance does not imply commercial comparability. Each relevant Amazon.ae result now has reproducible segment fields for pack count, size/dimensions, positioning, material/features, subtype, brand tier, and bundle configuration, plus a persisted `COMPARABLE`, `ADJACENT`, `NON_COMPARABLE`, or `UNKNOWN` decision and reasons.
+
+Reports retain the all-relevant price distribution for market context, but price gates and primary competition metrics use only the comparable segment. The default gate requires at least five current comparable Amazon.ae products and either a comparable median inside the requested price band or at least 40% of comparable products inside it. Configure these thresholds in `config/commercial_segments.yaml`. A single premium listing cannot make a predominantly low-priced segment pass; a distinct premium possibility is labeled `PREMIUM_POSITIONING_HYPOTHESIS` instead.
+
+A non-null validated opportunity score means enough evidence exists to calculate it. It does not mean the opportunity is attractive or that inventory should be purchased. Scores below the configured recommendation threshold are labeled `VALIDATED_WEAK_OPPORTUNITY`; recommendation strength and the unchanged 60% sourcing-confidence threshold remain separate.
+
 ### Optional provider cost controls
 
 Paid calls are disabled by default even when a key exists:

@@ -1,0 +1,6 @@
+{
+  "price_gate": {
+    "minimum_comparable_products": 5,
+    "minimum_in_target_band_ratio": 0.40
+  }
+}

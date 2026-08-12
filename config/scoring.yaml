@@ -18,5 +18,5 @@
     "adequate_sample_size": 5,
     "recent_days": 7
   },
-  "research_gates": {"top_3_minimum_confidence": 60, "minimum_current_observations": 2}
+  "research_gates": {"top_3_minimum_confidence": 60, "minimum_current_observations": 2, "minimum_recommendation_score": 65}
 }

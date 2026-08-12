@@ -27,14 +27,14 @@ def run(candidates: list[tuple[str,str]], *, output: str | Path, max_calls: int 
     if max_calls is not None: budget.max_calls=min(budget.max_calls,max_calls)
     source=SerpApiSource(); cache=SerpApiCache(); now=datetime.now(timezone.utc); timestamp=now.isoformat().replace("+00:00","Z")
     base=json.loads(Path(base_bundle).read_text(encoding="utf-8")) if base_bundle else None
-    products=list(base.get("products",[])) if base else []; evidence=list(base.get("evidence",[])) if base else []; errors=list(base.get("provider_errors",[])) if base else []
+    products=list(base.get("products",[])) if base else []; evidence=list(base.get("evidence",[])) if base else []; errors=list(base.get("provider_errors",[])) if base else []; relevance_runs=[]
     for niche,keyword in candidates:
         try:
             response,state=source.execute(source.search_params(keyword),budget,cache,f"structured validation: {niche}")
             if response is None:
                 errors.append({"provider":"serpapi","purpose":niche,"error_type":"request_failed","message":state}); continue
             normalized=normalize_search_response(response,niche=niche,keyword=keyword,run_id=f"serpapi-{now:%Y%m%d%H%M%S}",retrieved_at=timestamp,relevant=_relevance(keyword))
-            products.extend(normalized["products"]); evidence.extend(normalized["evidence"])
+            products.extend(normalized["products"]); evidence.extend(normalized["evidence"]); relevance_runs.append({"niche":niche,"keyword":keyword,"target_commercial_profile":normalized["target_commercial_profile"],"aggregates":normalized["aggregates"],"classified_results":normalized["all_classified_results"],"excluded_results":normalized["excluded_results"]})
         except (PermissionError,ValueError) as exc:
             errors.append({"provider":"serpapi","purpose":niche,"error_type":type(exc).__name__,"message":str(exc).replace(os.getenv('SERPAPI_API_KEY','__never__'),'[REDACTED]')})
             if isinstance(exc,PermissionError) and budget.calls_remaining<=budget.reserve_calls: break
@@ -49,7 +49,7 @@ def run(candidates: list[tuple[str,str]], *, output: str | Path, max_calls: int 
             errors.append({"provider":"serpapi","purpose":niche,"error_type":type(exc).__name__,"message":str(exc).replace(os.getenv('SERPAPI_API_KEY','__never__'),'[REDACTED]')})
             if isinstance(exc,PermissionError): break
     prior=base.get("research_run",{}) if base else {}; prior_funnel=prior.get("candidate_funnel",{})
-    bundle={"research_run":{"id":f"serpapi-{now:%Y%m%d%H%M%S}","slug":"serpapi-amazon-uae-validation","marketplace":"amazon.ae","started_at":prior.get("started_at",timestamp),"evidence_cutoff":timestamp,"filters":prior.get("filters",{"price_min_aed":50,"price_max_aed":150}),"candidate_funnel":{"generated":prior_funnel.get("generated",max(60,len(candidates))),"screened":prior_funnel.get("screened",len(candidates))}},"keywords":list(dict.fromkeys((list(base.get("keywords",[])) if base else [])+[k for _,k in candidates])),"products":products,"evidence":evidence,"source_summary":{"SerpApi":"USED" if any(x.get('source_provider')=='serpapi' for x in evidence) else "FAILED"},"serpapi_usage":budget.usage(configured=bool(os.getenv("SERPAPI_API_KEY"))),"provider_errors":errors}
+    bundle={"research_run":{"id":f"serpapi-{now:%Y%m%d%H%M%S}","slug":"serpapi-amazon-uae-validation","marketplace":"amazon.ae","started_at":prior.get("started_at",timestamp),"evidence_cutoff":timestamp,"filters":prior.get("filters",{"price_min_aed":50,"price_max_aed":150}),"candidate_funnel":{"generated":prior_funnel.get("generated",max(60,len(candidates))),"screened":prior_funnel.get("screened",len(candidates))}},"keywords":list(dict.fromkeys((list(base.get("keywords",[])) if base else [])+[k for _,k in candidates])),"products":products,"evidence":evidence,"source_summary":{"SerpApi":"USED" if any(x.get('source_provider')=='serpapi' for x in evidence) else "FAILED"},"serpapi_usage":budget.usage(configured=bool(os.getenv("SERPAPI_API_KEY"))),"serpapi_relevance":relevance_runs,"provider_errors":errors}
     path=Path(output); path.parent.mkdir(parents=True,exist_ok=True); path.write_text(json.dumps(bundle,indent=2),encoding="utf-8"); return path
 
 
