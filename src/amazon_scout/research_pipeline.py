@@ -17,6 +17,8 @@ from .normalization import clamp, minmax, percentile, price_statistics
 from .profitability import maximum_landed_cost, uncertain_fee_scenarios
 from .scoring import load_scoring_config, opportunity_score, opportunity_score_breakdown
 from .economics_v13 import calculate_candidate_economics
+from .dataforseo_audit import CompetitionAudit, DemandAudit, POC_KEYWORDS, AmazonKeywordCluster, select_representative_asins
+from dataclasses import asdict
 from .sources.provenance import choose_preferred
 
 STRENGTH = {EvidenceStrength.VERY_HIGH: 1.0, EvidenceStrength.HIGH: .85, EvidenceStrength.MEDIUM: .65, EvidenceStrength.LOW: .4, EvidenceStrength.VERY_LOW: .2}
@@ -199,7 +201,7 @@ def _risk_component(records: list[EvidenceRecord], as_of: datetime, fresh_cfg: d
     return {"score": round(score, 2) if score is not None else None, "confidence": confidence, "status": status, "gate": gate, "gate_reason": "Risk evaluation is available." if gate else "Risk evaluation is missing or unknown.", "evidence_ids": [r.id for r in risk_records], "risk_reasons": reasons, "risk_source_urls": urls}
 
 
-def _source_status(records: list[EvidenceRecord]) -> dict[str, str]:
+def _source_status(records: list[EvidenceRecord], *, canonical_economics_used: bool = False) -> dict[str, str]:
     used = {"Codex live web search": False, "Amazon UAE official pages": False, "SerpApi": False, "DataForSEO": False, "Rainforest": False, "Amazon SP-API": False}
     for record in records:
         host = urlparse(record.source_url or "").hostname or ""
@@ -209,6 +211,7 @@ def _source_status(records: list[EvidenceRecord]) -> dict[str, str]:
         if record.source_provider == "dataforseo": used["DataForSEO"] = True
         if record.source_provider == "rainforest": used["Rainforest"] = True
         if record.source_provider == "sp_api": used["Amazon SP-API"] = True
+    if canonical_economics_used: used["Amazon UAE official pages"] = True
     return {name: "USED" if is_used else ("NOT_CONFIGURED" if name in {"SerpApi", "DataForSEO", "Rainforest", "Amazon SP-API"} else "AVAILABLE_NOT_USED") for name, is_used in used.items()}
 
 
@@ -352,6 +355,10 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
             "fee_status": "estimated" if preferred_fee and preferred_fee.is_estimate else "observed" if preferred_fee else "unknown",
             "known_fee_components": ["referral fee"] if known_fee is not None else [], "unknown_fee_components": ["actual supplier cost", "observed packaged dimensions/weight", "verified freight quote"], "fee_scenarios": scenarios, "economics": economics,
             "components": {"demand": demand, "competition": competition, "risk": risk}, "demand_score": demand["score"], "demand_status": demand["status"], "demand_confidence": demand["confidence"],
+            "dataforseo_demand_audit": asdict(DemandAudit(demand["score"], demand["status"])),
+            "dataforseo_competition_audit": asdict(CompetitionAudit(competition["score"], competition["status"])),
+            "amazon_keyword_cluster": asdict(AmazonKeywordCluster(POC_KEYWORDS[niche][0], POC_KEYWORDS[niche][1:], "existing_repository_evidence")) if niche in POC_KEYWORDS else None,
+            "dataforseo_representative_asins": select_representative_asins(comparable_products),
             "competition_score": competition["score"], "competition_status": competition["status"], "competition_confidence": competition["confidence"],
             "risk_score": risk["score"], "risk_status": risk["status"], "risk_confidence": risk["confidence"], "factors": factors,
             "preliminary_opportunity_score": preliminary, "validated_opportunity_score": validated, "opportunity_score": preliminary, "score_breakdown": score_breakdown,
@@ -365,7 +372,7 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
     return sorted(results, key=lambda x: (x["validated_opportunity_score"] is not None, x["preliminary_opportunity_score"] or -1), reverse=True)
 
 
-def source_status_from_evidence(records: list[EvidenceRecord]) -> dict[str, str]: return _source_status(records)
+def source_status_from_evidence(records: list[EvidenceRecord], *, canonical_economics_used: bool = False) -> dict[str, str]: return _source_status(records, canonical_economics_used=canonical_economics_used)
 
 
 def evidence_cutoff(records: list[EvidenceRecord], generated_at: datetime) -> str:

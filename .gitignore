@@ -8,6 +8,7 @@ data/*.db
 research/raw/*.json
 research/normalized/*.json
 research/cache/serpapi/*.json
+research/cache/dataforseo/
 reports/*.md
 reports/*.json
 !data/.gitkeep

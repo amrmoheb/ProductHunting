@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from amazon_scout.sources.base import PaidProviderBudget, SourceAvailability
 from amazon_scout.sources.codex_web import CodexWebSource
-from amazon_scout.sources.dataforseo import DataForSEOSource
+from amazon_scout.sources.dataforseo import DataForSEOMode, DataForSEOSettings, DataForSEOSource
 from amazon_scout.sources.provenance import choose_preferred, source_priority
 from amazon_scout.sources.rainforest import RainforestSource
 from amazon_scout.sources.serpapi import SerpApiSource
@@ -28,10 +28,11 @@ class SourceTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(SerpApiSource().status().availability, SourceAvailability.NOT_CONFIGURED)
             self.assertEqual(RainforestSource().status().availability, SourceAvailability.NOT_CONFIGURED)
-            self.assertEqual(DataForSEOSource().status().availability, SourceAvailability.NOT_CONFIGURED)
+            self.assertEqual(DataForSEOSource(DataForSEOSettings()).status().availability, SourceAvailability.NOT_CONFIGURED)
             self.assertEqual(CodexWebSource().status().availability, SourceAvailability.READY)
 
-    def test_dataforseo_uae_is_fail_closed(self):
+    def test_dataforseo_disabled_by_default_and_sandbox_opt_in(self):
         with patch.dict(os.environ, {"DATAFORSEO_LOGIN":"x", "DATAFORSEO_PASSWORD":"y"}, clear=True):
-            self.assertEqual(DataForSEOSource().status().availability, SourceAvailability.UNSUPPORTED_FOR_UAE)
-            with self.assertRaises(RuntimeError): DataForSEOSource().amazon_labs_request()
+            self.assertEqual(DataForSEOSource(DataForSEOSettings(login="x",password="y")).status().availability, SourceAvailability.NOT_CONFIGURED)
+        with patch.dict(os.environ, {"DATAFORSEO_LOGIN":"x", "DATAFORSEO_PASSWORD":"y", "DATAFORSEO_MODE":"sandbox"}, clear=True):
+            self.assertEqual(DataForSEOSource(DataForSEOSettings(DataForSEOMode.SANDBOX,login="x",password="y")).status().availability, SourceAvailability.READY)

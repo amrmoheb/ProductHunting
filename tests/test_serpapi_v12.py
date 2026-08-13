@@ -54,7 +54,9 @@ class SerpApiV12Tests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,{"SERPAPI_API_KEY":"top-secret"},clear=True):
             cache=SerpApiCache(directory,8); params=SerpApiSource.search_params("mat"); cache.put(params,fixture(),NOW)
             budget=SerpApiBudget(True,40,1)
-            response,state=SerpApiSource().execute(params,budget,cache,"test")
+            original_get=cache.get
+            with patch.object(cache,"get",side_effect=lambda request: original_get(request,NOW)):
+                response,state=SerpApiSource().execute(params,budget,cache,"test")
             self.assertEqual(state,"CACHE"); self.assertEqual(budget.calls_attempted,0); self.assertEqual(budget.calls_saved_by_cache,1); self.assertEqual(budget.keywords_queried,["mat"]); self.assertTrue(response)
 
     def test_cache_expiry(self):
