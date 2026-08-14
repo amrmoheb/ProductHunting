@@ -1,12 +1,13 @@
 import copy
 
-from amazon_scout.economics_v13 import calculate_candidate_economics
+from amazon_scout.economics_v13 import calculate_candidate_economics, required_economics_raw, score_with_economics
 from amazon_scout.production_scoring_v14d import (
     COMPETITION_WEIGHTS, DATAFORSEO_ROLES, DEMAND_WEIGHTS,
     PROPOSED_OPPORTUNITY_WEIGHTS, SCORING_VERSION, eligibility_tier,
     score_analysis,
 )
 from amazon_scout.scoring_calibration_v14c import load_artifacts
+from amazon_scout.research_report import _economics_section
 
 
 def analysis():
@@ -58,3 +59,30 @@ def test_dataforseo_is_optional_and_roles_are_explicit(monkeypatch):
     assert result["dataforseo_roles"] == DATAFORSEO_ROLES
     assert result["v14d_competition"]["families"]["dataforseo_competitors"]["score"] is None
     assert DATAFORSEO_ROLES["amazon_labs_en"] == "NOT_CONFIRMED"
+
+
+def test_report_uses_v14d_economics_weight_and_arithmetic():
+    result=score_analysis(analysis()); result["niche"]="arbitrary future product"
+    raw=result["economics"]["score"]["raw"]
+    contribution=next(row["contribution"] for row in result["score_breakdown"]["arithmetic"] if row["component"]=="economics")
+    report="\n".join(_economics_section([result]))
+    assert "### arbitrary future product" in report
+    assert "V1.4D economics opportunity weight: 35%" in report
+    assert contribution==round(raw*.35,4)
+    assert f"/ {contribution:.2f} /" in report
+
+
+def test_report_passes_35_percent_to_legacy_helpers_without_changing_defaults():
+    result=score_analysis(analysis()); report="\n".join(_economics_section([result]))
+    raw=result["economics"]["score"]["raw"]; contribution=round(raw*.35,4)
+    before=round(float(result["validated_opportunity_score"])-contribution,2)
+    assert f"{required_economics_raw(before,55,weight=.35):.2f} / {required_economics_raw(before,65,weight=.35):.2f}" in report
+    assert f"maximum score with economics raw 100: {score_with_economics(before,100,weight=.35):.2f}" in report
+    assert required_economics_raw(46.55,55)==42.25
+    assert score_with_economics(46.55,100)==66.55
+
+
+def test_report_omits_unknown_economics_candidate():
+    unknown={"niche":"unpriced future product","economics":{"status":"INSUFFICIENT","confidence":20,"score":{"raw":None},"scenarios":{}}}
+    report="\n".join(_economics_section([unknown]))
+    assert "unpriced future product" not in report
