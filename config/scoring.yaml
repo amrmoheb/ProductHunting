@@ -1,12 +1,13 @@
 {
   "weights": {
     "demand": 0.30,
-    "competition_attractiveness": 0.20,
-    "margin_potential": 0.20,
-    "price_attractiveness": 0.10,
-    "risk_attractiveness": 0.10,
-    "differentiation_potential": 0.10
+    "competition": 0.25,
+    "economics": 0.35,
+    "risk": 0.10
   },
+  "scoring_version": "V1.4D",
+  "demand_weights": {"listing_activity": 0.35, "review_activity": 0.30, "search_evidence": 0.20, "breadth_freshness": 0.15},
+  "competition_weights": {"comparable_density": 0.30, "review_barrier": 0.25, "market_concentration": 0.15, "dataforseo_competitors": 0.20, "dataforseo_ranked_keywords": 0.10},
   "bands": [[85, "Exceptional candidate"], [75, "Strong candidate"], [65, "Worth deeper research"], [50, "Weak/uncertain"], [0, "Avoid unless special reason"]],
   "confidence": {
     "brand_analytics": 20,
@@ -18,5 +19,5 @@
     "adequate_sample_size": 5,
     "recent_days": 7
   },
-  "research_gates": {"top_3_minimum_confidence": 60, "minimum_current_observations": 2, "minimum_recommendation_score": 65}
+  "research_gates": {"validated_minimum_confidence": 55, "strong_minimum_confidence": 70, "top_3_minimum_confidence": 70, "minimum_current_observations": 2, "minimum_recommendation_score": 65}
 }

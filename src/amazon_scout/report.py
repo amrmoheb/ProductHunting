@@ -22,9 +22,9 @@ def _money(value: float | None) -> str:
 
 def render_report(analyses: list[NicheAnalysis], *, filters: dict[str, Any], sources: list[str], unavailable: list[str], mode: str) -> str:
     now = datetime.now(timezone.utc).isoformat()
-    ranked = sorted(analyses, key=lambda a: (a.opportunity_score * a.data_confidence_score / 100, a.opportunity_score), reverse=True)[:10]
+    ranked = sorted(analyses, key=lambda a: (a.opportunity_score, a.data_confidence_score), reverse=True)[:10]
     lines = [
-        "# AMAZON UAE PRODUCT OPPORTUNITY REPORT", "", f"Research time: {now}",
+        "# AMAZON UAE PRODUCT OPPORTUNITY REPORT", "", "Production scoring: **V1.4D**", f"Research time: {now}",
         "Marketplace: Amazon UAE / Amazon.ae (`A2VIGQ35RCS4UG`), region `eu`, currency AED",
         f"Mode: {mode}", f"Filters used: `{json.dumps(filters, sort_keys=True)}`",
         f"Data sources successfully used: {', '.join(sources) or 'None'}",

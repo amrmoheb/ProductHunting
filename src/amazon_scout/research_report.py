@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .profitability import maximum_landed_cost
-from .research_pipeline import canonical_funnel, evidence_cutoff, source_status_from_evidence, validate_funnel_invariants
-from .scoring import load_scoring_config, synthetic_ceiling_audit
+from .research_pipeline import LEGACY_CONSTRUCTION_WEIGHTS, canonical_funnel, evidence_cutoff, source_status_from_evidence, validate_funnel_invariants
+from .scoring import synthetic_ceiling_audit
 from .economics_v13 import required_economics_raw, score_with_economics
 
 
@@ -33,7 +33,7 @@ def _gate_table(item: dict[str, Any]) -> list[str]:
 def _economics_section(analyses: list[dict[str, Any]]) -> list[str]:
     serious={"long handle baseboard cleaning tool","washable ceiling fan blade sleeve duster","adjustable airplane foot hammock","wood crochet blocking board"}
     items=[item for item in analyses if item["niche"] in serious]
-    lines=["## ECONOMICS", "", "V1.3 uses the existing 20% `margin_potential` weight. Scenario assumptions are estimates, not observed costs. UNKNOWN economics still contributes zero. Amazon fee VAT is shown both as a modeled fee cost and separately as potentially recoverable VAT cash flow; import VAT is excluded from permanent landed cost and shown as cash flow only.", "", "Maximum landed cost formula: `selling price × (1 − target net margin) − Amazon fees − fee VAT − FBA − storage − advertising − returns − other operating reserves`.", ""]
+    lines=["## ECONOMICS", "", "V1.4D consumes the unchanged V1.3 economics raw score at 35%. Scenario assumptions are estimates, not observed costs. UNKNOWN economics contributes zero with no weight redistribution. Amazon fee VAT is shown both as a modeled fee cost and separately as potentially recoverable VAT cash flow; import VAT is excluded from permanent landed cost and shown as cash flow only.", "", "Maximum landed cost formula: `selling price × (1 − target net margin) − Amazon fees − fee VAT − FBA − storage − advertising − returns − other operating reserves`.", ""]
     for item in items:
         econ=item.get("economics",{}); category=econ.get("category",{}); scenarios=econ.get("scenarios",{}); base=scenarios.get("BASE",{}); score=econ.get("score",{}); profile=econ.get("physical_profile") or {}; sens=econ.get("sensitivity",{})
         before=round(float(item.get("validated_opportunity_score") or item.get("preliminary_opportunity_score") or 0)-float(score.get("raw") or 0)*.20,2)
@@ -88,14 +88,14 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
     raw["research_run"]["evidence_cutoff"] = cutoff
     technically_validated = [a for a in analyses if a.get("technically_validated")]
     qualified = [a for a in analyses if a.get("qualified_strong_opportunity")]
-    promising = [a for a in analyses if a["recommendation_tier"] == "PROMISING_BUT_UNVALIDATED"]
+    promising = [a for a in analyses if a["recommendation_tier"] in {"PROMISING_BUT_UNVALIDATED", "VALIDATED"}]
     bundles = [a for a in analyses if a["candidate_type"] in {"BUNDLE_HYPOTHESIS", "DIFFERENTIATION_HYPOTHESIS"}]
     premium_hypotheses = [a for a in analyses if a["recommendation_tier"] == "PREMIUM_POSITIONING_HYPOTHESIS"]
-    gaps = [a for a in analyses if a["recommendation_tier"] == "EVIDENCE_GAP"]
+    gaps = [a for a in analyses if a["recommendation_tier"] in {"EVIDENCE_GAP", "PRELIMINARY_NEEDS_EVIDENCE"}]
     rejected = [a for a in analyses if a["recommendation_tier"] == "REJECTED_CONSTRAINT"]
     do_not = [a for a in analyses if a["recommendation_tier"] in {"HIGH_RISK", "DO_NOT_SOURCE"}]
     has_serpapi = any(r.source_provider == "serpapi" for r in records)
-    lines = ["# AMAZON UAE PRODUCT OPPORTUNITY REPORT", "", f"Mode: {'RESEARCH + SERPAPI' if has_serpapi else 'RESEARCH'}", "Marketplace: Amazon.ae (`A2VIGQ35RCS4UG`)", "Currency: AED", f"Generated: {generated_at.isoformat().replace('+00:00','Z')}", f"Evidence cutoff: {cutoff}", "", "## DATA SOURCES", ""]
+    lines = ["# AMAZON UAE PRODUCT OPPORTUNITY REPORT", "", "Production scoring: **V1.4D**", f"Mode: {'RESEARCH + SERPAPI' if has_serpapi else 'RESEARCH'}", "Marketplace: Amazon.ae (`A2VIGQ35RCS4UG`)", "Currency: AED", f"Generated: {generated_at.isoformat().replace('+00:00','Z')}", f"Evidence cutoff: {cutoff}", "", "## DATA SOURCES", ""]
     for name in ("Codex live web search", "Amazon UAE official pages", "SerpApi", "DataForSEO", "Rainforest", "Amazon SP-API"):
         lines.append(f"- {name}: {statuses[name]}")
     usage=raw.get("serpapi_usage",{})
@@ -104,7 +104,7 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
     for key in ("generated", "screened", "web_evidence_backed", "serpapi_validated", "price_gate_passed", "demand_gate_passed", "competition_gate_passed", "risk_gate_passed", "technically_validated", "strong_opportunities", "bundle_hypotheses", "finalists"):
         lines.append(f"- {key.replace('_',' ').title()}: {funnel[key]}")
     lines += ["", f"## TECHNICALLY VALIDATED — {len(technically_validated)}", ""]
-    if not technically_validated: lines.append("No candidates passed price, demand, competition, risk, and the 60% confidence gate.")
+    if not technically_validated: lines.append("No candidates passed price, demand, competition, risk, and the V1.4D 55% VALIDATED confidence gate.")
     for index, item in enumerate(technically_validated, 1): lines.extend(_candidate_detail(item, index))
     lines += ["", f"## QUALIFIED STRONG OPPORTUNITIES — {len(qualified)}", ""]
     if not qualified: lines.append("No technically validated candidate reached the configured validated opportunity score threshold of 65. Technically validated weak candidates did not fail their evidence gates; their deterministic opportunity scores were simply below the recommendation threshold. Under the former combined label this was `QUALIFIED FINALISTS — 0`; weak candidates were not promoted merely to fill a requested count.")
@@ -162,19 +162,19 @@ def render_research_report(raw: dict[str, Any], analyses: list[dict[str, Any]], 
         lines += ["", "## V1.2.4 SCORE EXPLAINABILITY AUDIT", "", "Missing numeric components are treated as zero. Confidence is a separate gate with multiplier 1.0; it does not alter the arithmetic score. No additional score penalties are applied.", "", "| Niche | Price | Demand | Competition | Margin/economics | Risk | Differentiation | Pre-confidence | Validated | Confidence |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
         keys=("price_attractiveness","demand","competition_attractiveness","margin_potential","risk_attractiveness","differentiation_potential")
         for item in analyses:
-            breakdown=item.get("score_breakdown") or {}; components=breakdown.get("components",{}); contributions=[f"{_fmt(components.get(key,{}).get('raw'))} × {_fmt(components.get(key,{}).get('weight'))} = {_fmt(components.get(key,{}).get('contribution'))}" for key in keys]
+            breakdown=item.get("legacy_score_breakdown") or {}; components=breakdown.get("components",{}); contributions=[f"{_fmt(components.get(key,{}).get('raw'))} × {_fmt(components.get(key,{}).get('weight'))} = {_fmt(components.get(key,{}).get('contribution'))}" for key in keys]
             lines.append(f"| {item['niche']} | {' | '.join(contributions)} | {_fmt(breakdown.get('final_pre_confidence_score'))} | {_fmt(item.get('validated_opportunity_score'))} | {_fmt(item.get('data_confidence_score'))} |")
         lines += ["", "## V1.2.4 CURRENT TOP-CANDIDATE THRESHOLD AUDIT", ""]
         audited={"long handle baseboard cleaning tool","washable ceiling fan blade sleeve duster","adjustable airplane foot hammock","wood crochet blocking board"}
         for item in analyses:
             if item["niche"] not in audited: continue
-            breakdown=item.get("score_breakdown") or {}; score=float(breakdown.get("final_pre_confidence_score") or 0); components=breakdown.get("components",{})
+            breakdown=item.get("legacy_score_breakdown") or {}; score=float(breakdown.get("final_pre_confidence_score") or 0); components=breakdown.get("components",{})
             losses=[]
             for name,component in components.items():
                 ceiling=100*float(component["weight"]); loss=round(ceiling-float(component["contribution"]),3)
                 if loss>0: losses.append(f"{name} loses {loss:.3f} points versus its component ceiling (raw {_fmt(component['raw'])}, contribution {_fmt(component['contribution'])}/{ceiling:.2f})")
             lines += [f"### {item['niche']}", "", f"- Score arithmetic: **{_fmt(score)}**; shortfall to 55: **{max(0,55-score):.2f}**; shortfall to 65: **{max(0,65-score):.2f}**.", f"- Specific suppressors: {'; '.join(losses)}.", "- Confidence multiplier: 1.0; confidence is a separate gate and does not explain the score shortfall.", ""]
-        ceiling=synthetic_ceiling_audit(load_scoring_config()["weights"]); perfect=ceiling["PERFECT_CANDIDATE"]; very_good=ceiling["VERY_GOOD_CANDIDATE"]
+        ceiling=synthetic_ceiling_audit(LEGACY_CONSTRUCTION_WEIGHTS); perfect=ceiling["PERFECT_CANDIDATE"]; very_good=ceiling["VERY_GOOD_CANDIDATE"]
         lines += ["", "## V1.2.4 PERFECT-CANDIDATE CEILING AUDIT", "", f"- PERFECT_CANDIDATE maximum validated opportunity score: **{_fmt(perfect['final_pre_confidence_score'])}** at 100% confidence.", f"- VERY_GOOD_CANDIDATE score: **{_fmt(very_good['final_pre_confidence_score'])}** at 85% confidence.", f"- Threshold 65 mathematically reachable: **{'YES' if perfect['final_pre_confidence_score'] >= 65 else 'NO — AUDIT FAILURE'}**.", "- UNKNOWN economics behavior: margin_potential is `None`, converted to effective raw 0, contributing 0 of the available 20 points. It is not a separate gate and does not change the confidence calculation; the score ceiling with all other components perfect becomes 80.", "- Regulatory guidance freshness: authoritative official-government regulatory evidence is `STATIC_GUIDANCE`, not artificially `CURRENT`; cited evidence still supports the risk gate."]
         old_funnel=audit.get("before_funnel") or {}; lines += ["", "## V1.2.4 CANONICAL FUNNEL BEFORE / AFTER", "", "| Metric | Before | After |", "|---|---:|---:|"]
         for key in ("generated","screened","serpapi_validated","price_gate_passed","demand_gate_passed","competition_gate_passed","risk_gate_passed","technically_validated","strong_opportunities"):

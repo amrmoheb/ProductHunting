@@ -126,7 +126,7 @@ Historical observations are not overwritten. When enough history exists, the ana
 
 ### Progressive research and scoring
 
-Broad runs start with 30–100 narrow niches, then progressively screen, validate, score, and deep-dive. A candidate cannot enter FINAL_TOP_10 without multiple current observations plus price, competition, demand, and risk evidence. TOP_3 sourcing consideration requires data confidence >= 60 unless the user explicitly accepts speculative ideas.
+Broad runs start with 30–100 narrow niches, then progressively screen, validate, score, and deep-dive. A candidate cannot enter FINAL_TOP_10 without multiple current observations plus price, competition, demand, and risk evidence. V1.4D caps confidence 55–69 at VALIDATED, confidence below 55 at PRELIMINARY_NEEDS_EVIDENCE, and requires confidence >=70 plus known risk and adequate economics for STRONG sourcing consideration.
 
 Opportunity and confidence remain separate. A high opportunity score with confidence 25 is labeled “research more,” never “buy inventory.” Reports expose candidate funnel, source status, evidence URLs, fee uncertainty, regulatory risk, seasonality, differentiation, and verification steps.
 
@@ -198,7 +198,7 @@ A non-null validated opportunity score means enough evidence exists to calculate
 
 All candidates—including broad/generic commercial profiles—use the same price-gate function: at least five current comparable Amazon.ae prices, then either an in-range median or an in-band ratio of at least 40%. A below-floor core market with an observable in-band premium tail is classified canonically as `PREMIUM_POSITIONING_HYPOTHESIS`; it cannot simultaneously remain a validated core opportunity.
 
-Reports distinguish `TECHNICALLY VALIDATED` (price, demand, competition, risk, and confidence ≥60 all pass) from `QUALIFIED STRONG OPPORTUNITIES` (technical validation plus validated score ≥65). Multi-phase SerpApi runs accumulate one persisted complete-run usage record; phase subtotals never replace the report header total.
+Reports distinguish `TECHNICALLY VALIDATED` (price, demand, competition, risk, and confidence ≥55 all pass) from `QUALIFIED STRONG OPPORTUNITIES` (technical validation plus score ≥65, confidence ≥70, known risk, and adequate economics). Multi-phase SerpApi runs accumulate one persisted complete-run usage record; phase subtotals never replace the report header total.
 
 ### Optional provider cost controls
 
@@ -226,7 +226,7 @@ Research mode is real current research, but weaker than authorized SP-API and Br
 
 ## Scoring
 
-`config/scoring.yaml` is JSON-compatible YAML loaded by the standard library. The deterministic score is demand 30%, competition attractiveness 20%, margin potential 20%, price attractiveness 10%, risk attractiveness 10%, and differentiation potential 10%. Bands are: 85–100 exceptional, 75–84 strong, 65–74 deeper research, 50–64 weak/uncertain, and below 50 avoid absent a special reason.
+`config/scoring.yaml` is JSON-compatible YAML loaded by the standard library. V1.4D is demand 30%, competition attractiveness 25%, unchanged V1.3 economics 35%, and risk attractiveness 10%. Demand families are listing activity 35%, review activity 30%, search evidence 20%, and breadth/freshness 15%. Competition families are comparable density 30%, review barrier 25%, market concentration 15%, observed DataForSEO Product Competitors 20%, and observed Ranked Keywords 10%; missing provider evidence contributes zero and is never treated as low competition.
 
 Data confidence is separate and rewards authorized Brand Analytics, pricing, ranks, adequate samples, fee estimates, and recency. Missing inputs get no confidence credit. A score of 88 with confidence 30 is not presented as a confident winner.
 

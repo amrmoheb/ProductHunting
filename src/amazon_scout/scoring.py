@@ -49,7 +49,7 @@ def opportunity_score_breakdown(factors: dict[str, float | None], weights: dict[
 
 def synthetic_ceiling_audit(weights: dict[str, float]) -> dict[str, Any]:
     perfect={name:100.0 for name in weights}
-    very_good={"demand":85.0,"competition_attractiveness":75.0,"margin_potential":85.0,"price_attractiveness":90.0,"risk_attractiveness":90.0,"differentiation_potential":80.0}
+    very_good={"demand":85.0,"competition":75.0,"economics":85.0,"risk":90.0}
     return {
         "PERFECT_CANDIDATE": opportunity_score_breakdown(perfect,weights,confidence=100.0),
         "VERY_GOOD_CANDIDATE": opportunity_score_breakdown(very_good,weights,confidence=85.0),

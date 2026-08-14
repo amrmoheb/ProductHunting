@@ -14,6 +14,7 @@ from .normalization import minmax, price_statistics
 from .report import render_report, write_report
 from .risks import calculate_risk
 from .scoring import data_confidence, load_scoring_config, opportunity_score
+from .economics_v13 import calculate_candidate_economics
 
 
 def analyze_niche(raw: dict[str, Any], config: dict[str, Any]) -> NicheAnalysis:
@@ -32,7 +33,8 @@ def analyze_niche(raw: dict[str, Any], config: dict[str, Any]) -> NicheAnalysis:
         analysis.margin_potential_score = round(max(0, min(100, 100 - fee_ratio * 180)), 2)
     brand_count = len({p.brand.lower() for p in products if p.brand})
     analysis.differentiation_score = round(min(85, 35 + brand_count * 7 + (10 if len(products) >= 4 else 0)), 2)
-    factors = {"demand": analysis.demand_score, "competition_attractiveness": analysis.competition_score, "margin_potential": analysis.margin_potential_score, "price_attractiveness": analysis.price_attractiveness_score, "risk_attractiveness": 100 - analysis.risk_score, "differentiation_potential": analysis.differentiation_score}
+    economics = calculate_candidate_economics(analysis.name, median_price)
+    factors = {"demand": analysis.demand_score, "competition": analysis.competition_score, "economics": (economics.get("score") or {}).get("raw"), "risk": 100 - analysis.risk_score}
     analysis.opportunity_score = opportunity_score(factors, config["weights"])
     newest = max((p.observed_at for p in products), default=None)
     analysis.data_confidence_score = data_confidence(brand_analytics=analysis.brand_analytics_available, pricing=any(p.price_aed is not None for p in products), sales_rank=bool(ranks), sample_size=len(products), fee_estimate=analysis.fees_aed is not None, newest_observation=newest, config=config)
@@ -44,7 +46,7 @@ def run_mock(fixture: str | Path = "tests/fixtures/mock_research.json", filters:
     config = load_scoring_config()
     analyses = [analyze_niche(niche, config) for niche in raw["niches"]]
     content = render_report(analyses, filters=filters or {}, sources=["mock SP-API fixture"], unavailable=["live SP-API", "Brand Analytics"], mode="mock")
-    payload = {"marketplace_id": "A2VIGQ35RCS4UG", "generated_at": datetime.now(timezone.utc).isoformat(), "mode": "mock", "analyses": [{"name": a.name, "opportunity_score": a.opportunity_score, "data_confidence_score": a.data_confidence_score} for a in analyses]}
+    payload = {"scoring_version": "V1.4D", "marketplace_id": "A2VIGQ35RCS4UG", "generated_at": datetime.now(timezone.utc).isoformat(), "mode": "mock", "analyses": [{"name": a.name, "opportunity_score": a.opportunity_score, "data_confidence_score": a.data_confidence_score} for a in analyses]}
     paths = write_report(content, payload, "mock-product-opportunities")
     _persist_run(analyses, filters or {}, paths, mode="mock")
     normalized = Path("research/normalized/mock-latest.json")
@@ -70,8 +72,9 @@ def _persist_run(analyses: list[NicheAnalysis], filters: dict[str, Any], report_
                     connection.execute("INSERT INTO sales_ranks(asin,marketplace_id,rank,source,observed_at) VALUES(?,?,?,?,?)", (product.asin, "A2VIGQ35RCS4UG", product.sales_rank, product.source, product.observed_at))
                 if product.offer_count is not None:
                     connection.execute("INSERT INTO offers(asin,marketplace_id,offer_count,amazon_retail_present,source,observed_at) VALUES(?,?,?,?,?,?)", (product.asin, "A2VIGQ35RCS4UG", product.offer_count, product.amazon_retail_present, product.source, product.observed_at))
-            factors = {"demand": analysis.demand_score, "competition_attractiveness": analysis.competition_score, "margin_potential": analysis.margin_potential_score, "price_attractiveness": analysis.price_attractiveness_score, "risk_attractiveness": 100-analysis.risk_score, "differentiation_potential": analysis.differentiation_score}
+            economics = calculate_candidate_economics(analysis.name, price_statistics(p.price_aed for p in analysis.products)["median"])
+            factors = {"demand": analysis.demand_score, "competition": analysis.competition_score, "economics": (economics.get("score") or {}).get("raw"), "risk": 100-analysis.risk_score}
             connection.execute("INSERT INTO niche_metrics(run_id,niche,metrics_json,observed_at) VALUES(?,?,?,?)", (run_id, analysis.name, json.dumps({"catalog_result_count": analysis.catalog_result_count, "risk_reasons": analysis.risk_reasons}), now))
-            connection.execute("INSERT INTO opportunity_scores(run_id,niche,score,confidence_score,factors_json,scoring_version,calculated_at) VALUES(?,?,?,?,?,?,?)", (run_id, analysis.name, analysis.opportunity_score, analysis.data_confidence_score, json.dumps(factors), "v1", now))
+            connection.execute("INSERT INTO opportunity_scores(run_id,niche,score,confidence_score,factors_json,scoring_version,calculated_at) VALUES(?,?,?,?,?,?,?)", (run_id, analysis.name, analysis.opportunity_score, analysis.data_confidence_score, json.dumps(factors), "V1.4D", now))
         connection.execute("INSERT INTO reports(run_id,markdown_path,json_path,created_at) VALUES(?,?,?,?)", (run_id, str(report_paths[0]), str(report_paths[1]), now))
         connection.execute("UPDATE research_runs SET completed_at=? WHERE id=?", (now, run_id))

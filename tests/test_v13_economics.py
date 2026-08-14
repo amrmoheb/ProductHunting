@@ -36,16 +36,16 @@ class EconomicsV13Tests(unittest.TestCase):
     def test_economics_confidence_partial_for_estimate(self):
         e=calculate_candidate_economics("long handle baseboard cleaning tool",100); self.assertEqual(e["status"],"PARTIAL"); self.assertLess(e["confidence"],75)
     def test_unknown_economics_remains_zero(self):
-        weights=load_scoring_config()["weights"]; factors={k:100 for k in weights}; factors["margin_potential"]=None
-        self.assertEqual(opportunity_score_breakdown(factors,weights)["components"]["margin_potential"]["contribution"],0)
+        weights=load_scoring_config()["weights"]; factors={k:100 for k in weights}; factors["economics"]=None
+        self.assertEqual(opportunity_score_breakdown(factors,weights)["components"]["economics"]["contribution"],0)
     def test_sufficient_economics_deterministic(self):
         p=ProductPhysicalProfile(None,.8,None,None,None,45,12,10,None,1,"one","SUPPLIER",90)
         a=calculate_candidate_economics("long handle baseboard cleaning tool",100,actual_landed_cost_aed=20,physical_profile=p); b=calculate_candidate_economics("long handle baseboard cleaning tool",100,actual_landed_cost_aed=20,physical_profile=p)
         self.assertEqual(a["score"]["raw"],b["score"]["raw"]); self.assertEqual(a["status"],"SUFFICIENT")
     def test_score_contribution_exactly_twenty_percent(self):
         raw=calculate_candidate_economics("long handle baseboard cleaning tool",100)["score"]["raw"]
-        weights=load_scoring_config()["weights"]; factors={key:0 for key in weights}; factors["margin_potential"]=raw
-        self.assertEqual(opportunity_score_breakdown(factors,weights)["components"]["margin_potential"]["contribution"],round(raw*.2,4))
+        weights=load_scoring_config()["weights"]; factors={key:0 for key in weights}; factors["economics"]=raw
+        self.assertEqual(opportunity_score_breakdown(factors,weights)["components"]["economics"]["contribution"],round(raw*.35,4))
     def test_baseboard_threshold_arithmetic(self): self.assertEqual(required_economics_raw(46.55,55),42.25); self.assertEqual(required_economics_raw(46.55,65),92.25)
     def test_fan_threshold_arithmetic(self): self.assertEqual(required_economics_raw(45.68,65),96.6)
     def test_foot_hammock_ceiling(self): self.assertLess(score_with_economics(43.81,100),65)

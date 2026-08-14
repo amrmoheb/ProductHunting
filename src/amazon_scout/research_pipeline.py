@@ -20,6 +20,7 @@ from .economics_v13 import calculate_candidate_economics
 from .dataforseo_audit import CompetitionAudit, DemandAudit, POC_KEYWORDS, AmazonKeywordCluster, select_representative_asins
 from dataclasses import asdict
 from .sources.provenance import choose_preferred
+from .production_scoring_v14d import score_analysis
 
 STRENGTH = {EvidenceStrength.VERY_HIGH: 1.0, EvidenceStrength.HIGH: .85, EvidenceStrength.MEDIUM: .65, EvidenceStrength.LOW: .4, EvidenceStrength.VERY_LOW: .2}
 DEMAND_METRICS = {"amazon_search_volume", "search_position", "bestseller_rank", "bestseller_badge", "keyword_visibility", "ranked_keyword_count", "uae_trend_signal", "amazon_visibility", "monthly_purchase_signal_lower_bound", "bought_last_month_raw", "relevant_result_count", "median_reviews"}
@@ -27,6 +28,7 @@ COMPETITION_METRICS = {"visible_competing_products", "relevant_result_count", "o
 RISK_METRICS = {"regulatory_risk", "risk_score", "fragile", "battery", "hazardous", "weight_kg"}
 CANDIDATE_TYPES = {"OBSERVED_MARKET_OPPORTUNITY", "BUNDLE_HYPOTHESIS", "DIFFERENTIATION_HYPOTHESIS"}
 STATISTICAL_METRICS = COMPETITION_METRICS | {"current_price_aed", "observed_market_price_aed"}
+LEGACY_CONSTRUCTION_WEIGHTS = {"demand": .30, "competition_attractiveness": .20, "margin_potential": .20, "price_attractiveness": .10, "risk_attractiveness": .10, "differentiation_potential": .10}
 
 
 def _numeric(records: list[EvidenceRecord], name: str) -> list[float]:
@@ -303,16 +305,17 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
         brands = {str(r.metric_value).lower() for r in evidence if r.metric_name == "brand" and r.metric_value}
         differentiation = round(min(85, 30 + len(brands) * 5 + len({r.keyword for r in evidence if r.keyword}) * 3), 2) if evidence else None
         factors = {"demand": demand["score"], "competition_attractiveness": competition["score"], "margin_potential": margin_score, "price_attractiveness": price_score, "risk_attractiveness": None if risk["score"] is None else 100-risk["score"], "differentiation_potential": differentiation}
-        preliminary = opportunity_score(factors, scoring["weights"]) if any(v is not None for v in factors.values()) else None
+        preliminary = opportunity_score(factors, LEGACY_CONSTRUCTION_WEIGHTS) if any(v is not None for v in factors.values()) else None
         gates = {"price": {"gate": price_gate, "reason": price_reason}, "demand": {"gate": demand["gate"], "reason": demand["gate_reason"]}, "competition": {"gate": competition["gate"], "reason": competition["gate_reason"]}, "risk": {"gate": risk["gate"], "reason": risk["gate_reason"]}}
         required_pass = all(g["gate"] for g in gates.values())
         validated = preliminary if required_pass else None
         component_confidences = [demand["confidence"], competition["confidence"], risk["confidence"], 80.0 if price_gate else 0.0]
         overall_confidence = round(sum(component_confidences) / len(component_confidences), 2)
-        score_breakdown = opportunity_score_breakdown(factors, scoring["weights"], confidence=overall_confidence) if preliminary is not None else None
+        score_breakdown = opportunity_score_breakdown(factors, LEGACY_CONSTRUCTION_WEIGHTS, confidence=overall_confidence) if preliminary is not None else None
         if score_breakdown is not None: score_breakdown["final_validated_opportunity_score"] = validated
-        confidence_gate = overall_confidence >= scoring["research_gates"]["top_3_minimum_confidence"]
-        gates["confidence"] = {"gate": confidence_gate, "reason": "Overall data confidence meets the 60% sourcing threshold." if confidence_gate else f"Overall data confidence {overall_confidence}% is below the required 60%."}
+        validated_confidence_minimum = float(scoring["research_gates"].get("validated_minimum_confidence", 55))
+        confidence_gate = overall_confidence >= validated_confidence_minimum
+        gates["confidence"] = {"gate": confidence_gate, "reason": f"Overall data confidence meets the {validated_confidence_minimum:.0f}% VALIDATED threshold." if confidence_gate else f"Overall data confidence {overall_confidence}% is below the required {validated_confidence_minimum:.0f}%."}
         premium_prices = [float(p["current_price_aed"]) for p in products if p.get("positioning") == "PREMIUM" and isinstance(p.get("current_price_aed"),(int,float)) and (minimum is None or float(p["current_price_aed"]) >= minimum) and (maximum is None or float(p["current_price_aed"]) <= maximum)]
         below_floor_with_premium_tail = not price_gate and comparable_median is not None and minimum is not None and comparable_median < minimum and (comparable_in_band > 0 or bool(premium_prices))
         commercial_classification = "PREMIUM_POSITIONING_HYPOTHESIS" if below_floor_with_premium_tail else "CORE_MARKET_OPPORTUNITY"
@@ -369,6 +372,7 @@ def analyze_evidence_bundle(raw: dict[str, Any], records: list[EvidenceRecord], 
             "final_top_10_eligible": qualified_strong, "top_3_to_source_eligible": qualified_strong and candidate_type == "OBSERVED_MARKET_OPPORTUNITY",
             "remaining_unknowns": [name for name, value in (("Amazon UAE price", observed_market_price), ("fee calculation price", fee_basis), ("demand score", demand["score"]), ("competition score", competition["score"]), ("risk score", risk["score"])) if value is None],
         })
+    results = [score_analysis(item) for item in results]
     return sorted(results, key=lambda x: (x["validated_opportunity_score"] is not None, x["preliminary_opportunity_score"] or -1), reverse=True)
 
 

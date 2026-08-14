@@ -71,14 +71,14 @@ def test_perfect_candidate_mathematical_ceiling():
 
 def test_very_good_candidate_score_fixture():
     result=synthetic_ceiling_audit(load_scoring_config()["weights"])["VERY_GOOD_CANDIDATE"]
-    assert result["final_pre_confidence_score"]==83.5
+    assert result["final_pre_confidence_score"]==83.0
 
 
 def test_unknown_economics_behavior_is_zero_not_neutral():
-    weights=load_scoring_config()["weights"]; factors={name:100.0 for name in weights}; factors["margin_potential"]=None
-    result=opportunity_score_breakdown(factors,weights,confidence=100); margin=result["components"]["margin_potential"]
+    weights=load_scoring_config()["weights"]; factors={name:100.0 for name in weights}; factors["economics"]=None
+    result=opportunity_score_breakdown(factors,weights,confidence=100); margin=result["components"]["economics"]
     assert margin["effective_raw"]==0 and margin["contribution"]==0 and margin["missing_evidence_behavior"]=="TREATED_AS_ZERO"
-    assert result["final_pre_confidence_score"]==80.0
+    assert result["final_pre_confidence_score"]==65.0
 
 
 def test_static_regulatory_guidance_freshness_semantics():
