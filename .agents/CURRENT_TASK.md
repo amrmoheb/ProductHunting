@@ -1,106 +1,142 @@
 # Current Task
 
-Task ID: ECON-001
+Task ID: V14D-001
 Status: READY
 Owner: Codex implementation / ChatGPT review
 
 ## Objective
 
-Resolve the **only remaining V1.4C.2 activation blocker**: the prospective shadow validation reported `economics validated = 0` for the five frozen finalists. Verify whether the latest code already contains the intended V1.3 economics enrichment; fix only what is still missing, then rerun the economics/shadow validation **without any new provider network calls**.
+Activate the validated V1.4C scoring model as the production scoring model (**V1.4D**) without running a Big Hunt or making provider calls. The model has completed calibration, holdout review, and prospective shadow validation; the latest prospective rerun produced numeric V1.3 economics for 5/5 frozen finalists and returned `READY_FOR_V14D`.
 
-Frozen prospective bundle:
+This task is code activation + tests + Git handoff only.
 
-`research/normalized/2026-08-14-045804-v1.4c2-prospective-evidence-bundle.json`
+## Validated production model to activate
 
-Frozen finalists must remain exactly:
+### Demand score families
 
-1. watch organizer box with drawer
-2. three-slot travel watch roll
-3. adjustable under-sink shelf around pipes
-4. cabinet pull-out storage basket
-5. two-tier under-sink pull-out organizer
+- listing activity: 35%
+- review activity: 30%
+- search evidence: 20%
+- breadth/freshness: 15%
 
-Previous shadow report:
+### Competition attractiveness families
 
-`reports/2026-08-14-045952-v1.4c2-prospective-shadow-validation.md`
+Higher score = more attractive / less difficult competition.
 
-Previous result:
-- DataForSEO validation worked.
-- Demand saturation fixed.
-- Competition direction correct.
-- Sensitivity stable.
-- All five economics were `UNKNOWN (INSUFFICIENT)`.
-- `economics validated = 0`.
-- Activation recommendation: `NEEDS_MINOR_CALIBRATION` only because economics was not testable.
+- comparable density: 30%
+- review barrier: 25%
+- market concentration: 15%
+- DataForSEO Product Competitors: 20% when observed
+- DataForSEO Ranked Keywords: 10% when observed
+
+### Opportunity score
+
+- demand: 30%
+- competition attractiveness: 25%
+- unchanged V1.3 economics: 35%
+- risk attractiveness: 10%
+
+### Evidence/confidence principles
+
+- Missing/UNKNOWN/null/not-run/unsupported evidence must never improve a score.
+- Missing component contribution uses the fixed denominator strategy already validated by V1.4C; do not redistribute missing weight favorably.
+- Score and confidence remain separate.
+- Do not multiply score by confidence.
+- Duplicate ASINs must not inflate statistics.
+- Null is not zero.
+
+### Production eligibility/tier policy
+
+Use the validated confidence policy:
+
+- confidence >= 70: potentially `STRONG` / strong-eligible only if score threshold passes, risk is known, and economics support is adequate.
+- confidence 55–69: maximum `VALIDATED`.
+- confidence <55: maximum `PRELIMINARY_NEEDS_EVIDENCE` (or the closest existing production terminology without weakening the rule).
+- UNKNOWN risk cannot become STRONG.
+- Low-confidence PARTIAL economics cannot by itself create STRONG eligibility.
+- Do not force a Top 10 or STRONG candidate when evidence does not support one.
+
+## DataForSEO production role
+
+Persist the experimentally validated role decisions:
+
+- Amazon UAE Bulk Search Volume: `SUPPLEMENTAL_ONLY`; Arabic (`ar`) coverage is partial and must never represent total UAE demand.
+- Amazon UAE English DataForSEO Labs coverage: `NOT_CONFIRMED`.
+- Product Competitors: usable competition-intelligence signal when actually observed.
+- Ranked Keywords: supplemental competition/keyword signal when actually observed.
+- Missing DataForSEO evidence must reduce confidence / remain missing; it must never imply low competition.
+- Scoring itself must not automatically trigger DataForSEO calls.
+
+Correct stale documentation/rules that still state DataForSEO Amazon Labs is US/English-only for UAE. Runtime/POC evidence established UAE location 2784 with Amazon source for Arabic; English Amazon source remains unconfirmed.
 
 ## Instructions
 
-1. Sync latest `main` safely and inspect the current implementation **before editing**. The latest code may already include partial economics fixes; do not duplicate them.
-2. Trace the same frozen bundle through `prospective_shadow_v14c2` and the canonical `economics_v13` implementation.
-3. Reuse the existing V1.3 economics calculator. **Do not create a new economics formula.**
-4. Do not change frozen V1.4C demand, competition, opportunity weights, gates, tiers, or V1.3 formulas.
-5. Do not change the frozen shortlist.
-6. Use already collected bundle evidence. Estimated physical profiles are allowed only under the existing V1.3 policy and must remain explicitly `ESTIMATED`/`PARTIAL`; never relabel estimates as observed.
-7. For each finalist, attempt to persist/report:
-   - selling-price basis
-   - referral fee
-   - FBA/fulfilment estimate
-   - storage
-   - VAT treatment
-   - ads/returns/inbound/prep/freight/customs assumptions
-   - economics raw score
-   - economics confidence/status
-   - max landed cost @25%
-   - supplier product cost target
-8. If evidence is genuinely insufficient, keep it insufficient; never fabricate inputs.
-9. Fix the funnel-report inconsistency if still present: collector produced `Cheap-screened: 64` but old shadow report said `screened 0`. Reporting fix only; selection must not change.
-10. **Provider network calls are forbidden for this task:**
-    - SerpApi = 0
-    - DataForSEO = 0
-    - SP-API = 0
-    - any paid provider = 0
-11. Existing cached DataForSEO evidence may be reused only if it can be read locally without network access. If the current runner cannot rerun without network, add a narrowly scoped cache-only/offline path rather than contacting the provider.
-12. Run `python3 -m pytest` plus targeted tests.
-13. Produce an updated offline validation report using the same frozen shortlist if possible.
-14. Do not activate V1.4D in this task. Only report whether the updated validation would now satisfy the existing activation checks.
+1. Sync latest `main` safely and inspect current production scoring paths before editing.
+2. Identify every production path that calculates or reports demand, competition, opportunity score, confidence, recommendation tier, and gating (including `score-products`, research pipeline/reporting, and any persisted normalized analysis fields).
+3. Promote/reuse the validated V1.4C implementation rather than reimplementing equivalent arithmetic in multiple places. Keep one canonical production scoring path where practical.
+4. Set production scoring version metadata to a clear V1.4D identifier so reports/evidence make the active model explicit.
+5. Activate the exact validated formulas/weights above. Do not retune them in this task.
+6. Preserve canonical V1.3 economics formulas unchanged. Production scoring consumes V1.3 economics; it does not fork economics logic.
+7. Keep existing price, relevance, risk, freshness, marketplace, commercial-segment, and evidence-correctness protections unless a minimal adaptation is required to integrate V1.4D.
+8. Preserve `MAX LANDED COST @25%` and economics confidence/status in production outputs when available.
+9. Apply the confidence/tier policy consistently in production reports and persisted analysis.
+10. Update configuration/docs/tests that still describe the previous six-component production score (Demand 30 / Competition 20 / Margin 20 / Price 10 / Risk 10 / Differentiation 10) as active. Historical/audit reports may retain historical values; do not rewrite old artifacts.
+11. Update `AGENTS.md` and `README.md` where their production rules are stale, including DataForSEO UAE coverage/role wording and V1.4D scoring/tier rules.
+12. Keep DataForSEO provider calls optional/gap-directed. V1.4D scoring must work deterministically with no DataForSEO evidence present and must not reward absence.
+13. Maintain backward compatibility with existing evidence bundles where reasonable. If a legacy field cannot be removed safely, retain it but make the V1.4D canonical fields/version unambiguous.
+14. Add a migration/adapter only if needed for persisted legacy analyses; do not silently mutate historical report files.
+15. No discovery, prospective hunt, validation hunt, or Big Hunt in this task.
+16. **All provider network calls are forbidden during implementation/tests:** SerpApi=0, DataForSEO=0, SP-API=0, other paid providers=0.
+17. Run targeted scoring/report/pipeline tests and full `python3 -m pytest`.
+18. Run an OFFLINE regression/backtest using existing fixtures/cached bundles only to prove:
+    - old 86.25 demand saturation is not the active production behavior;
+    - missing evidence does not improve score;
+    - null != zero;
+    - confidence/tier caps work;
+    - V1.3 economics unchanged;
+    - score arithmetic reconciles exactly.
+19. Do not run paid/local live provider commands after implementation.
 
 ## Acceptance Criteria
 
-- Same five frozen finalists.
-- V1.3 formulas unchanged.
-- V1.4C formulas/weights unchanged.
-- No provider network calls.
-- Numeric V1.3 economics produced for at least 3/5 finalists if the existing evidence/approved estimated profiles legitimately support it; otherwise explain the exact blocker.
-- Estimated inputs stay explicitly estimated/partial.
-- Max landed cost @25% is persisted when numeric economics is valid.
-- Funnel reporting is consistent with the frozen bundle.
+- V1.4D is the single active production scoring model in normal research scoring/reporting paths.
+- Demand, competition, opportunity weights exactly match the validated model.
+- V1.3 economics formulas unchanged.
+- Missing/unknown evidence never rewards attractiveness.
+- DataForSEO Arabic search volume remains supplemental and capped/non-dominant; English Amazon Labs coverage remains NOT_CONFIRMED.
+- Product Competitors/Ranked Keywords affect competition only when evidence is observed.
+- Production scoring does not make provider calls.
+- Confidence is separate from score.
+- Tier caps/strong blockers are enforced.
+- `MAX LANDED COST @25%` remains visible when economics is numeric.
+- Production reports/evidence include scoring version `V1.4D` (or equivalent explicit identifier).
+- Existing frozen V1.4C/V1.4C.2 audit code can remain for historical comparison, but it must not be the only place where the new model exists.
 - Full tests pass.
-- Production scoring remains unchanged.
+- Provider calls during task = 0.
 
 ## Git Handoff
 
-If code changes are required:
-
-1. Create branch `codex/econ-001` from latest `main`.
-2. Implement/test there.
-3. Commit with a clear message.
-4. Push the branch to `origin`.
-5. Do not merge to `main`.
-
-If no code change is required, do not create a pointless commit; just run the offline validation and report the result.
+1. Create branch `codex/v14d-001` from latest `main`.
+2. Implement and test there.
+3. Commit all intended code/config/docs/test changes with a clear commit message.
+4. Push `codex/v14d-001` to `origin`.
+5. Do NOT merge to `main`.
+6. Do NOT run a Big Hunt.
 
 ## Handoff Response
 
-Return only the concise engineering summary:
+Return a concise engineering summary only:
 
 - Task ID
-- Root cause / whether latest code already contained the fix
-- Numeric economics count out of 5
-- Updated activation recommendation (`READY_FOR_V14D`, `NEEDS_MINOR_CALIBRATION`, or `NOT_READY`)
-- Tests
-- Provider calls (must be 0)
+- Production activation approach / canonical scoring path
 - Files changed
+- Exact active production weights
+- Confidence/tier policy implemented
+- DataForSEO role implemented
+- Targeted tests + full-suite tests
+- Offline regression result
+- Provider calls (must be 0)
 - Branch
-- Commit SHA if any
-- Updated report path
-- Any remaining blocker
+- Commit SHA
+- Any compatibility note
+- Any blocker
