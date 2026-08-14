@@ -5,8 +5,10 @@ from unittest.mock import patch
 
 from amazon_scout.prospective_collector_v14c2a import (
     BUSINESS_FILTERS, DATAFORSEO_CALLS, FUNNEL_TARGETS, REJECTION_CODES,
-    _default_amazon_validator, collect, deduplicate_candidates, dry_run,
-    screen_candidates, write_bundle,
+    _default_amazon_validator, _production_shortlist,
+    allocate_validation_candidates, category_distribution, collect,
+    deduplicate_candidates, dry_run, normalize_candidates, screen_candidates,
+    semantic_diversity, write_bundle,
 )
 from amazon_scout.prospective_shadow_v14c2 import run_shadow_validation, validate_bundle
 from amazon_scout.scoring_calibration_v14c import load_artifacts
@@ -33,7 +35,7 @@ def validator(rows,manifest,workdir,analysis_rows=None):
 
 
 def test_funnel_targets_are_ranges_not_quotas():
-    assert FUNNEL_TARGETS=={"generated":[50,80],"cheap_screen_survivors":[20,30],"serious_amazon_validated":[10,15],"deep_validation_finalists":[5,10]}
+    assert FUNNEL_TARGETS=={"generated":[400,600],"cheap_screen_survivors":[80,120],"serious_amazon_validated":[24,30],"deep_validation_finalists":[10,14]}
     assert BUSINESS_FILTERS["price_min_aed"]==50 and BUSINESS_FILTERS["price_max_aed"]==150
 
 
@@ -164,6 +166,63 @@ def test_default_validator_delegates_local_limits_and_cache_to_existing_runner(t
         _runner_bundle(output,rows,usage={"calls_attempted":0,"calls_succeeded":0,"calls_failed":0,"calls_saved_by_cache":7,"calls_remaining":7,"estimated_cost_usd":0}); return output
     with patch("amazon_scout.prospective_collector_v14c2a.run_serpapi_validation",side_effect=runner):
         result=_default_amazon_validator(rows,manifest(20),tmp_path)
-    assert len(captured["queries"])==15 and captured["max_calls"]==15
+    assert len(captured["queries"])==3 and captured["max_calls"]==15
     assert captured["call_limit"]=="7" and captured["cost_limit"]=="0.03"
     assert result["raw"]["serpapi_usage"]["calls_saved_by_cache"]==7
+
+
+def _diverse_candidates():
+    rows=[]
+    for macro in ("kitchen_tools","home_cleaning","travel_accessories","office_desk"):
+        for index in range(5):
+            rows.append(candidate(len(rows),f"{macro} product {index}",macro_category=macro,semantic_family=f"{macro}_family_{index}"))
+    return rows
+
+
+def test_validation_allocation_is_manifest_order_independent():
+    rows=_diverse_candidates()
+    forward=allocate_validation_candidates(rows,limit=12)
+    reverse=allocate_validation_candidates(list(reversed(rows)),limit=12)
+    assert [x["candidate_id"] for x in forward]==[x["candidate_id"] for x in reverse]
+
+
+def test_validation_macro_category_cap_is_three():
+    chosen=allocate_validation_candidates(_diverse_candidates(),limit=20)
+    assert max(category_distribution(chosen).values())==3
+
+
+def test_validation_semantic_family_cap_is_one():
+    rows=[candidate(i,f"distinct product {i}",macro_category=f"macro_{i%4}",semantic_family="shared_family") for i in range(12)]
+    chosen=allocate_validation_candidates(rows,limit=12)
+    assert len(chosen)==1
+
+
+def test_validation_storage_theme_cap_is_two():
+    rows=[candidate(i,f"storage organizer product {i}",macro_category=f"macro_{i}",semantic_family=f"storage_family_{i}") for i in range(8)]
+    chosen=allocate_validation_candidates(rows,limit=8)
+    assert len(chosen)==2 and all(x["storage_organization_theme"] for x in chosen)
+
+
+def test_deep_allocation_caps_categories_and_preserves_scores():
+    rows=analyses(6)
+    original={x["niche"]:(x["opportunity_score"],x["data_confidence_score"]) for x in rows}
+    for index,row in enumerate(rows):
+        row["macro_category"]="home_cleaning" if index<4 else "travel_accessories"
+        row["semantic_family"]=f"family_{index}"
+        row["storage_organization_theme"]=False
+        for gate in ("price","demand","competition"): row["gates"][gate]["gate"]=True
+    deep,_=_production_shortlist(rows)
+    assert category_distribution(deep)=={"home_cleaning":2,"travel_accessories":2}
+    assert all((x["opportunity_score"],x["data_confidence_score"])==original[x["niche"]] for x in rows)
+
+
+def test_collect_reports_stage_category_and_semantic_diversity():
+    rows=analyses(4)
+    m=manifest(4)
+    for index,item in enumerate(m["candidates"]):
+        item.update(macro_category=f"macro_{index}",semantic_family=f"family_{index}")
+    bundle=collect(m,amazon_validator=lambda a,b,c:validator(a,b,c,rows),now=NOW)
+    assert set(bundle["category_distribution"])=={"generated","cheap_screened","amazon_validated","deep"}
+    assert set(bundle["semantic_diversity"])=={"generated","cheap_screened","amazon_validated","deep"}
+    assert bundle["semantic_diversity"]["generated"]["unique_semantic_families"]==4
+    assert all("macro_category" in item and "semantic_family" in item for item in bundle["generated_candidates"])
