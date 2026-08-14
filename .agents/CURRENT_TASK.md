@@ -1,176 +1,80 @@
 # Current Task
 
-Task ID: BH-002
+Task ID: SOURCE-001
 Status: READY
 Owner: Codex execution / ChatGPT review
 
 ## Objective
 
-Run the second Amazon UAE production Big Hunt, but fix the **discovery/selection diversity bias** exposed by BH-001 before spending provider calls.
+Turn the only BH-002 candidate with a realistic mathematical path to STRONG — **Fabric resistance bands** — into a supplier-ready decision target using the completed BH-002 local report and canonical V1.4D/V1.3 arithmetic.
 
-BH-001 generated 320 ideas but all 8 deep candidates collapsed into the same broad storage/organization theme. The post-hunt ceiling audit concluded all should be discarded. This is not a V1.4D scoring failure; it is a funnel diversity failure.
+This is **not a new hunt** and must make **ZERO provider/network calls**.
 
-Do not retune V1.4D or V1.3 economics.
+BH-002 baseline:
+- candidate: Fabric resistance bands
+- V1.4D score: 47.13
+- confidence: 73.53%
+- tier: VALIDATED
+- current MAX LANDED COST @25%: AED 19.40
+- economics raw required to reach score 65: 83.31
 
-## Confirmed bias to correct
+Important model behavior: V1.3 economics sets the `actual_margin` subscore to zero while actual landed cost is unknown. Therefore public/estimated evidence alone cannot prove sourcing economics. A real supplier/landed-cost input is required.
 
-The current prospective collector can validate the first survivors in manifest order and the deep shortlist can rank purely by confidence/score without any category-diversity guardrail. A front-loaded discovery manifest can therefore consume most validation capacity on one semantic family.
+## Source artifacts
 
-Before live validation, make the smallest reusable production-safe change necessary so Amazon-validation candidate selection is **diversity-aware and deterministic**.
+Use the completed BH-002 local JSON/Markdown, locating it by BH-002 metadata if the timestamp differs. Expected paths include:
+- `reports/2026-08-14-075059-bh-002-diversified-production-big-hunt.json`
+- `reports/2026-08-14-075059-bh-002-diversified-production-big-hunt.md`
 
-Do not alter candidate scores to create diversity. Diversity applies to which candidates receive scarce validation/deep-evaluation slots, not to the final score formula.
+Do not regenerate market evidence.
 
-## Required diversity model
+## Required output
 
-Every generated candidate must have a normalized `macro_category` and `semantic_family` (derive deterministically when missing, or require/normalize them in the discovery manifest).
+1. Lock the exact commercial segment represented by the BH-002 evidence (fabric resistance bands, pack/configuration, representative ASINs, price basis). Do not silently mix latex loop bands, tube bands, rehab/medical products, or materially different bundles.
+2. Report current demand, competition, risk, price basis, V1.3 economics, confidence, and all current gates.
+3. Report the current V1.3 economics components and contributions, including the zero `actual_margin` behavior.
+4. Using the existing V1.3 `actual_landed_cost_aed` input and unchanged V1.4D scoring, calculate a deterministic landed-cost sensitivity grid from AED 5.00 up to the current AED 19.40 maximum (reasonable increments such as AED 1.00, plus exact boundary refinement).
+5. For each grid point calculate:
+   - actual net margin
+   - V1.3 economics raw score
+   - economics status/confidence
+   - resulting V1.4D opportunity score
+   - resulting recommendation tier
+6. Find the **highest actual landed cost that can still produce V1.4D score >=65 and STRONG eligibility**, holding demand/competition/risk evidence unchanged. Refine to approximately AED 0.10 precision where practical.
+7. Separately report:
+   - MAX LANDED COST @25% (current 25% margin threshold)
+   - maximum landed cost required for STRONG under the scoring model
+   - supplier product-cost target @25% from the current BASE scenario
+   - supplier product-cost target corresponding to the STRONG landed-cost threshold, using existing freight/customs/prep assumptions only
+8. Make assumptions explicit. Physical profile, freight, prep, FBA category/tier, and reserves remain estimates unless the BH-002 artifact already contains observed values.
+9. Produce a one-page **supplier quote checklist** for the user containing only the fields needed to replace estimates later: unit price, MOQ, exact pack configuration, packaged weight/dimensions, shipping term (EXW/FOB/DDP), freight to UAE per unit, customs/duty, prep/labeling, inbound-to-Amazon, and any material/quality certification relevant to the exact product.
+10. Final decision must be one of:
+   - `READY_TO_REQUEST_SUPPLIER_QUOTES` if a nontrivial landed-cost range can mathematically support STRONG;
+   - `DISCARD` if even very low realistic landed cost cannot support STRONG;
+   - `BLOCKED_BY_ARTIFACT` only if the BH-002 local evidence needed for the calculation is missing.
 
-Broad discovery should span at least these kinds of low-compliance families when plausible:
+## Integrity
 
-- kitchen tools / food-prep accessories (non-electric, non-food)
-- home cleaning tools
-- laundry / clothing-care accessories
-- travel accessories
-- automotive accessories (non-electronic, non-safety-critical)
-- office / desk accessories
-- crafts / hobby tools
-- small DIY / hardware helpers
-- garden / balcony accessories
-- pet accessories (non-food, non-medical)
-- fitness / mobility accessories (non-medical)
-- personal accessories (non-cosmetic)
-- bathroom accessories
-- outdoor / picnic accessories
-- household utility / maintenance
+- V1.4D weights unchanged.
+- V1.3 economics unchanged.
+- No provider calls: SerpApi=0, DataForSEO=0, SP-API=0, web/provider collection=0.
+- Do not invent supplier prices or actual landed costs.
+- Do not claim actual profit until a real supplier quote is supplied.
+- No production code changes unless a genuine reusable arithmetic defect is discovered.
 
-Do not force a category if no valid concepts survive the business/risk filters.
+## Output
 
-### Diversity guardrails
+Write timestamped Markdown + JSON under `reports/` if practical.
 
-For an unconstrained broad hunt:
-
-1. Generate **400–600 distinct concepts** across at least **12 macro categories**.
-2. No single macro category should exceed **15% of generated concepts** unless fewer than 12 valid categories are realistically available; report any exception.
-3. Semantic deduplication must treat near-identical organizer/storage variants as one family where practical.
-4. Cheap-screen target: **80–120 survivors** across at least **10 macro categories** when enough valid ideas survive.
-5. Amazon.ae validation target: **24–30 candidates** with:
-   - maximum **3 candidates per macro category**;
-   - maximum **1 candidate per semantic family**;
-   - storage/organization as a broad theme capped at **2 validation candidates total**.
-6. Deep-evaluation target: **10–14** with:
-   - maximum **2 per macro category**;
-   - normally maximum **1 per semantic family**;
-   - storage/organization capped at **1 deep candidate** unless an independently validated candidate is already STRONG-eligible before the diversity cap is applied.
-7. Diversity must never change V1.4D score, confidence, economics, risk, or recommendation-tier math.
-8. A genuinely superior candidate must still be reported even if another candidate from its category exists; the cap is primarily a scarce-validation-slot allocation rule, not a reason to falsify or hide final evidence.
-
-Add funnel/report fields showing category distribution at generated, cheap-screened, Amazon-validated, and deep stages.
-
-## Marketplace / business constraints
-
-- Amazon UAE / amazon.ae only (`A2VIGQ35RCS4UG`).
-- Current selling-price target: AED 50–150.
-- Target net margin: 25%.
-- Prefer packaged weight <1.5 kg.
-- Evergreen, simple, compact, low-breakage, low-compliance preferred.
-- Exclude/heavily reject electronics, batteries, cosmetics, supplements, food, medicines/medical claims, hazardous goods, fragile/oversized items, obvious IP/counterfeit risk, and high-regulation products.
-
-## Production scoring
-
-Use canonical V1.4D unchanged:
-
-- demand 30%
-- competition attractiveness 25%
-- V1.3 economics 35%
-- risk attractiveness 10%
-
-Tier rules unchanged:
-
-- confidence <55 => PRELIMINARY_NEEDS_EVIDENCE
-- 55–69 => maximum VALIDATED
-- >=70 => potentially STRONG only when score >=65, risk known, economics adequate, and all required gates pass
-
-Do not lower the STRONG threshold because BH-001 produced zero winners.
-
-## Provider policy
-
-### DataForSEO
-
-0 calls. Do not use it in BH-002.
-
-### SerpApi
-
-Use fresh cache first. Hard limits for BH-002:
-
-- maximum live/provider calls: **30**
-- maximum cost budget: **USD 0.60**
-- every Amazon request must explicitly target `amazon_domain=amazon.ae`
-- stop before either cap
-
-Do not spend a call on two candidates from the same semantic family when an unvalidated family is available and otherwise competitive at the cheap-screen stage.
-
-### SP-API
-
-0 calls unless already configured and safely available through the existing read-only route; do not require it and do not attempt onboarding.
-
-## Execution order
-
-1. Inspect and minimally fix reusable diversity allocation in the discovery/collector path. Add regression tests proving manifest order cannot cause one category to monopolize validation slots.
-2. Run full offline tests before any provider call.
-3. Generate a NEW diversified discovery manifest; do not reuse BH-001's storage-heavy ordering.
-4. Run the diversified cheap screen.
-5. Print/report category distribution before live validation and verify the guardrails.
-6. Only then perform Amazon.ae validation under the SerpApi caps.
-7. Deep-evaluate and run unchanged V1.3 economics for justified candidates.
-8. Run BH-001-style economics ceiling sanity on deep candidates before recommending extra manual supplier research.
-
-## Final decision report
-
-Write timestamped Markdown + JSON. Include:
-
-- generated / cheap-screened / Amazon-validated / deep / sourcing-finalist counts
-- category distribution at each stage
-- semantic-family diversity metrics
-- STRONG / VALIDATED / PRELIMINARY counts
-- top candidates from different categories with V1.4D score, confidence, demand, competition, risk, economics, MAX LANDED COST @25%, supplier target @25%
-- current comparable Amazon UAE price band and representative ASINs
-- primary reason for/against sourcing
-- mathematical max score if economics=100 for each deep candidate
-- SerpApi live calls, cache hits, cost
-- DataForSEO calls = 0
-- explicit statement if no STRONG candidate exists
-
-Do not force winners. Zero STRONG is acceptable, but a second category-collapse is not.
-
-## Testing
-
-Add focused tests for:
-
-- manifest-order independence of validation allocation
-- macro-category cap
-- semantic-family cap
-- storage/organization cap
-- diversity metadata/reporting
-- scoring values remain unchanged by diversity allocation
-
-Run targeted tests and full `python3 -m pytest` before live calls and again after any code changes.
-
-## Git behavior
-
-If reusable code changes are required, create/push branch `codex/bh-002-diversity`; do not merge to main. Generated research reports may remain gitignored/local.
-
-## Handoff response
-
-Return concise engineering/research summary:
-
+Return only:
 - Task ID
-- diversity root cause and fix
-- code files changed / branch / commit if any
-- tests
-- generated / cheap-screened / validated / deep / finalist funnel
-- macro-category counts at validated/deep stages
-- STRONG / VALIDATED / PRELIMINARY counts
-- top cross-category candidates with score/confidence/tier/MAX LANDED COST @25%
-- SerpApi live calls/cache hits/cost
-- DataForSEO calls (must be 0)
+- exact product segment
+- current score/confidence/tier
+- current MAX LANDED COST @25%
+- economics raw required for 65
+- highest landed cost that still supports STRONG
+- corresponding supplier product-cost target under current assumptions
+- decision
+- provider calls (must be 0)
 - report paths
-- blocker/major limitation
+- blocker, if any
