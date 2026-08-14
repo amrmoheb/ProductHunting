@@ -103,6 +103,8 @@ SCOUT_MODE=mock ./scripts/score-products
 - Official Amazon UAE pages (`sell.amazon.ae`) are preferred for fee methodology and seller guidance. `config/amazon_uae_public_fees.yaml` records verification references and assumptions. Referral fees are category-dependent; FBA depends on packaged dimensions, weight, price, and tier. Unknown components stay unknown.
 - SerpApi is optional. Its current Amazon Search/Product engines explicitly support `amazon_domain=amazon.ae`. Set `SERPAPI_API_KEY` only if desired.
 - DataForSEO is an optional V1.4A Amazon Labs audit provider. It defaults to disabled, dynamically validates UAE/location-language support, isolates sandbox dummy evidence, and never changes demand, competition, opportunity scores, gates, or tiers. Production requires explicit `DATAFORSEO_ALLOW_PAID=true` plus local task and cost budgets; Merchant Amazon sellers remains schema-only and disabled.
+- The V1.4B real-data POC is a separate, default-refusing audit command for the five persisted candidates. Its V1.4B.1 refresh is bulk-only, reuses the production cache, and does not rescore candidates: `./scripts/dataforseo-v14b-poc`.
+- V1.4B.1 makes the POC refresh bulk-only, distinguishes numeric/zero/null/missing provider volumes, reports unrun competition as `NOT_RUN`, and adds a separate six-keyword, one-task coverage diagnostic: `./scripts/dataforseo-v14b-coverage-probe`. Neither path changes official scores.
 - Rainforest/Traject Data is optional and fail-closed until current official documentation confirms `amazon.ae` support.
 - SP-API remains highest priority in live mode and improves catalog, offer, rank, and fee confidence. Brand Analytics, when authorized, improves demand evidence.
 
@@ -231,6 +233,32 @@ Data confidence is separate and rewards authorized Brand Analytics, pricing, ran
 Profit calculations require observed/estimated Amazon fees and a user-provided landed cost. When cost is unknown, reports calculate the maximum landed cost for 20%, 25%, and 30% net margin. No BSR-to-sales conversion is implemented.
 
 ## Tests
+
+The V1.4B.2 competition utility POC is disabled by default. It is restricted to
+ASIN `B0C5WLFKDT`, Amazon UAE location `2784`, Arabic, Ranked Keywords and
+Product Competitors, with hard ceilings of two tasks and USD 0.05. Identical
+production requests reuse the secret-free DataForSEO cache. It never changes
+official scores and does not call Bulk Search Volume or Merchant Sellers.
+
+V1.4C.2 prospective shadow validation consumes a completed current-stack
+Amazon.ae evidence bundle. Candidate selection is frozen before the audit-only
+V1.4C score is calculated. Optional DataForSEO competition gap calls are capped
+at 10 tasks and USD 0.15, prioritize Product Competitors, reuse cache, and never
+call Bulk Search Volume by default. Production scoring remains unchanged.
+
+The V1.4C.2A collector creates that bundle from a provenance-bearing discovery
+manifest. Discovery remains a Codex/current-research responsibility because
+Python does not perform Codex web search or invent product ideas. Each manifest
+candidate supplies an ID, name, Amazon keyword, query/source, discovery time,
+marketplace, and generation reason. The collector deduplicates and cheaply
+screens ideas, uses the existing SerpApi Amazon.ae validation and budget/cache,
+then freezes deep finalists using current production gates, confidence, and
+scores only. It never imports the shadow scorer or calls DataForSEO.
+
+```bash
+./scripts/v14c2-collect-prospective-bundle --dry-run
+./scripts/v14c2-collect-prospective-bundle --discovery-manifest research/raw/<prospective-discovery>.json
+```
 
 ```bash
 python3 -m pytest

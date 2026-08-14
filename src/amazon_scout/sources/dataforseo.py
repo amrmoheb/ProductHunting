@@ -322,7 +322,7 @@ def parse_recent_errors(payload: dict[str,Any]) -> list[dict[str,Any]]:
 def parse_bulk_search_volume(payload: dict[str, Any], environment: EvidenceEnvironment) -> list[dict[str, Any]]:
     now=datetime.now(timezone.utc).isoformat(); rows=[]
     for task,result,item in _task_rows(payload):
-        rows.append({"keyword":item.get("keyword"),"search_volume":item.get("search_volume"),"location_code":result.get("location_code") or task.get("data",{}).get("location_code"),"language_code":result.get("language_code") or task.get("data",{}).get("language_code"),"last_updated":item.get("last_updated_time") or item.get("last_updated") or now,"provider_cost":float(task.get("cost") or 0),"environment":environment.value,"score_eligible":False})
+        rows.append({"keyword":item.get("keyword"),"search_volume":item.get("search_volume"),"search_volume_present":"search_volume" in item,"location_code":result.get("location_code") or task.get("data",{}).get("location_code"),"language_code":result.get("language_code") or task.get("data",{}).get("language_code"),"last_updated":item.get("last_updated_time") or item.get("last_updated") or now,"provider_cost":float(task.get("cost") or 0),"environment":environment.value,"score_eligible":False})
     return rows
 
 
